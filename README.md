@@ -45,8 +45,8 @@ A placeholder catalog mirrors the latest provided card list (broadcast, energy, 
 strike, special, buildings, and skills). It is stored in `src/Cards.*` for later gameplay logic.
 Broadcast cards are stored as separate cooperation/stealth variants, and the current
 catalog includes explicit broadcast ranges (1/2/∞). Energy production is applied once
-per round at the end of the Preparation phase.
-Harmony Eye is indestructible by attacks and awakens the Time Interference ability.
+per round at the end of the Preparation phase. Harmony Eye is indestructible by attacks
+and awakens the Time Interference ability.
 
 ## Broadcast resolution (timing rules)
 
@@ -89,14 +89,15 @@ Harmony Eye is indestructible by attacks and awakens the Time Interference abili
 - **Evolution**: after destroying a faction or challenging via Interstellar Expedition (success or failure),
   gain that faction's skill.
 
-## CLI usage
+## Multiplayer CLI usage
 
 ```bash
-./df_game --host [--port 7777] [--ai]
-./df_game --join --ip <host_ip> [--port 7777]
+./df_game --host --players 3 --name Host
+./df_game --join --ip <host_ip> --name ClientA
+./df_game --join --ip <host_ip> --name ClientB
 ```
 
-Press `q` then Enter to quit.
+Type chat messages and press Enter to broadcast. Use `quit` to exit.
 
 ## Fixed asset paths
 

@@ -8,6 +8,8 @@ struct CLIOptions {
   bool useAi = false;
   std::string ip = "";
   int port = 7777;
+  int players = 2;
+  std::string name = "Player";
 };
 
 class CLI {

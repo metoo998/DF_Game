@@ -14,6 +14,10 @@ CLIOptions CLI::parse(int argc, char** argv) const {
       options.ip = argv[++i];
     } else if (arg == "--port" && i + 1 < argc) {
       options.port = std::stoi(argv[++i]);
+    } else if (arg == "--players" && i + 1 < argc) {
+      options.players = std::stoi(argv[++i]);
+    } else if (arg == "--name" && i + 1 < argc) {
+      options.name = argv[++i];
     } else if (arg == "--ai") {
       options.useAi = true;
     } else if (arg == "--help") {
@@ -29,10 +33,13 @@ CLIOptions CLI::parse(int argc, char** argv) const {
 }
 
 void CLI::printUsage(const char* exeName) const {
-  std::cout << "Usage: " << exeName << " [--host | --join --ip <address>] [--port <port>] [--ai]\n"
+  std::cout << "Usage: " << exeName
+            << " [--host | --join --ip <address>] [--port <port>] [--players <n>] [--name <name>] [--ai]\n"
             << "  --host          Create a room and act as server.\n"
             << "  --join          Join a room by IP. Requires --ip.\n"
             << "  --ip            Host IP address to join.\n"
             << "  --port          Port to use (default 7777).\n"
+            << "  --players       Total players for the room (host only, default 2).\n"
+            << "  --name          Player display name.\n"
             << "  --ai            Enable AI player on host.\n";
 }

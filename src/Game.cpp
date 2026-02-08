@@ -28,25 +28,31 @@ void Game::run() {
 
   bool running = true;
   while (running) {
-    tick();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    if (std::cin.peek() == 'q') {
-      running = false;
+    runPreparationPhase();
+    runPlayPhase();
+    runResolutionPhase();
+
+    for (const auto& message : network_.receiveMessages()) {
+      std::cout << "[Chat] " << message.payload << "\n";
     }
+
+    std::cout << "> ";
+    std::string line;
+    if (!std::getline(std::cin, line)) {
+      break;
+    }
+    if (line == "quit") {
+      network_.sendMessage("has left the game.");
+      running = false;
+    } else if (!line.empty()) {
+      network_.sendMessage(line);
+    }
+
+    network_.tick();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
   network_.shutdown();
-}
-
-void Game::tick() {
-  runPreparationPhase();
-  runPlayPhase();
-  runResolutionPhase();
-  handleNetworkTick();
-
-  if (aiClient_) {
-    aiClient_->evaluateTurn();
-  }
 }
 
 void Game::runPreparationPhase() {

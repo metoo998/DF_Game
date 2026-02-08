@@ -22,12 +22,14 @@ int main(int argc, char** argv) {
           .role = options.host ? NetworkRole::Host : NetworkRole::Client,
           .ip = options.ip,
           .port = options.port,
+          .maxPlayers = options.players,
+          .playerName = options.name,
       },
       .useAi = options.useAi,
   };
 
   Game game(config);
-  std::cout << "Press 'q' then Enter to quit.\n";
+  std::cout << "Type messages to chat, or 'quit' to exit.\n";
   game.run();
   return 0;
 }
