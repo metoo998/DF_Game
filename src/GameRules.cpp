@@ -24,10 +24,22 @@ PhaseReport GameRules::runResolution(int playerId) {
 ObservationReport GameRules::generateObservations(int playerId) {
   (void)playerId;
   ObservationReport report;
-  report.systems.push_back({1, "Star present", 0});
-  report.systems.push_back({2, "Star present", 1});
+  addSystem(1);
+  addSystem(2);
+  report.systems.push_back({1, system(1).starExists ? "Star present" : "Star absent", 0});
+  report.systems.push_back({2, system(2).isDimensionalized ? "2D collapse" : "Star present", 1});
   report.warnings.push_back({1, "Incoming projectile within distance 1."});
   return report;
+}
+
+void GameRules::addSystem(int systemId) {
+  if (systemId >= static_cast<int>(systems_.size())) {
+    systems_.resize(systemId + 1);
+  }
+}
+
+const SystemState& GameRules::system(int systemId) const {
+  return systems_.at(systemId);
 }
 
 void GameRules::queueProjectile(const std::string& cardName, int ownerId) {
@@ -43,6 +55,36 @@ void GameRules::applyTypeIIEffect(const std::string& cardName, int ownerId) {
 void GameRules::applyTypeIIIEffect(const std::string& cardName, int ownerId) {
   std::cout << "[Rules] Applying Type III effect from card: " << cardName
             << " by player " << ownerId << "\n";
+}
+
+void GameRules::applyTimeInterference(int systemId, int ownerId, bool targetHasCivilization) {
+  addSystem(systemId);
+  if (!targetHasCivilization) {
+    std::cout << "[Rules] Time Interference had no effect on empty/colony system " << systemId
+              << ".\n";
+    return;
+  }
+
+  auto& target = systems_[systemId];
+  target.starExists = false;
+  target.destroyed = true;
+  target.isDimensionalized = false;
+  target.occupied = false;
+  target.colonized = false;
+  std::cout << "[Rules] Time Interference erased civilization in system " << systemId
+            << " by player " << ownerId << ".\n";
+}
+
+void GameRules::applyTechLockdown(int systemId, int ownerId) {
+  addSystem(systemId);
+  std::cout << "[Rules] Tech Lockdown discards building cards in system " << systemId
+            << " by player " << ownerId << ".\n";
+}
+
+void GameRules::applyInterstellarExpedition(int systemId, int ownerId) {
+  addSystem(systemId);
+  std::cout << "[Rules] Interstellar Expedition launched toward system " << systemId
+            << " by player " << ownerId << ".\n";
 }
 
 void GameRules::addPlayer(int playerId) {

@@ -28,6 +28,14 @@ struct PlayerParams {
   bool alive = true;
 };
 
+struct SystemState {
+  bool starExists = true;
+  bool isDimensionalized = false;
+  bool destroyed = false;
+  bool occupied = false;
+  bool colonized = false;
+};
+
 struct ObservedSystemState {
   int systemId = -1;
   std::string starStatus;
@@ -57,9 +65,15 @@ public:
 
   ObservationReport generateObservations(int playerId);
 
+  void addSystem(int systemId);
+  const SystemState& system(int systemId) const;
+
   void queueProjectile(const std::string& cardName, int ownerId);
   void applyTypeIIEffect(const std::string& cardName, int ownerId);
   void applyTypeIIIEffect(const std::string& cardName, int ownerId);
+  void applyTimeInterference(int systemId, int ownerId, bool targetHasCivilization);
+  void applyTechLockdown(int systemId, int ownerId);
+  void applyInterstellarExpedition(int systemId, int ownerId);
 
   void addPlayer(int playerId);
   const std::vector<Projectile>& projectiles() const { return projectiles_; }
@@ -73,4 +87,5 @@ private:
 
   std::vector<Projectile> projectiles_{};
   std::vector<PlayerParams> players_{};
+  std::vector<SystemState> systems_{};
 };

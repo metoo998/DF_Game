@@ -46,6 +46,7 @@ strike, special, buildings, and skills). It is stored in `src/Cards.*` for later
 Broadcast cards are stored as separate cooperation/stealth variants, and the current
 catalog includes explicit broadcast ranges (1/2/∞). Energy production is applied once
 per round at the end of the Preparation phase.
+Harmony Eye is indestructible by attacks and awakens the Time Interference ability.
 
 ## Broadcast resolution (timing rules)
 
