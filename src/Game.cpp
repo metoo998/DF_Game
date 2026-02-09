@@ -1,19 +1,18 @@
 #include "Game.h"
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <random>
+#include <sstream>
 #include <thread>
 
 Game::Game(const GameConfig& config)
     : config_(config), network_(config.network) {
   assets_.load();
 
-  if (const auto* strike = cardCatalog_.findById(11)) {
-    playerHand_.push_back({strike->id, strike->title, strike->description, strike->effectType});
-  }
-  if (const auto* shield = cardCatalog_.findById(8)) {
-    opponentHand_.push_back({shield->id, shield->title, shield->description, shield->effectType});
-  }
+  initializeDeck();
+  drawCards(4);
 
   if (config_.useAi) {
     aiClient_.emplace(config_.aiModelPath);
@@ -26,26 +25,13 @@ Game::Game(const GameConfig& config)
 void Game::run() {
   network_.start();
 
-  bool running = true;
-  while (running) {
+  while (running_) {
     runPreparationPhase();
     runPlayPhase();
     runResolutionPhase();
 
     for (const auto& message : network_.receiveMessages()) {
       std::cout << "[Chat] " << message.payload << "\n";
-    }
-
-    std::cout << "> ";
-    std::string line;
-    if (!std::getline(std::cin, line)) {
-      break;
-    }
-    if (line == "quit") {
-      network_.sendMessage("has left the game.");
-      running = false;
-    } else if (!line.empty()) {
-      network_.sendMessage(line);
     }
 
     network_.tick();
@@ -72,17 +58,28 @@ void Game::runPlayPhase() {
 
   auto report = rules_.runPlay(0);
   std::cout << "[Phase] " << report.summary << "\n";
+
+  showHand();
+  std::cout << "Actions: play <index> <targetSystem> [hasCiv 0|1], discard <index>, hand, say <msg>, end, quit\n";
+  while (running_) {
+    std::cout << "action> ";
+    std::string line;
+    if (!std::getline(std::cin, line)) {
+      running_ = false;
+      break;
+    }
+    if (line == "end") {
+      break;
+    }
+    if (handlePlayCommand(line)) {
+      break;
+    }
+  }
 }
 
 void Game::runResolutionPhase() {
   auto report = rules_.runResolution(0);
   std::cout << "[Phase] " << report.summary << "\n";
-
-  if (!playerHand_.empty()) {
-    if (const auto* card = cardCatalog_.findById(playerHand_.front().id)) {
-      rules_.resolveCardPlay(*card, 0, 1, true);
-    }
-  }
 }
 
 void Game::setupPlayers() {
@@ -113,4 +110,119 @@ void Game::playCard(const Card& card) {
 
 void Game::resolveTurn() {
   // TODO: Resolve combat and update game state.
+}
+
+void Game::initializeDeck() {
+  deck_.clear();
+  for (const auto& card : cardCatalog_.all()) {
+    deck_.push_back({card.id, card.title, card.description, card.effectType});
+  }
+  std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::shuffle(deck_.begin(), deck_.end(), rng);
+}
+
+void Game::drawCards(int count) {
+  for (int i = 0; i < count; ++i) {
+    refillDeckIfNeeded();
+    if (deck_.empty()) {
+      break;
+    }
+    playerHand_.push_back(deck_.back());
+    deck_.pop_back();
+  }
+}
+
+void Game::refillDeckIfNeeded() {
+  if (!deck_.empty() || discardPile_.empty()) {
+    return;
+  }
+  deck_ = std::move(discardPile_);
+  discardPile_.clear();
+  std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::shuffle(deck_.begin(), deck_.end(), rng);
+}
+
+void Game::showHand() const {
+  std::cout << "[Hand] " << playerHand_.size() << " cards\n";
+  for (size_t i = 0; i < playerHand_.size(); ++i) {
+    std::cout << "  [" << i << "] " << playerHand_[i].name << "\n";
+  }
+}
+
+bool Game::handlePlayCommand(const std::string& line) {
+  if (line == "hand") {
+    showHand();
+    return false;
+  }
+  if (line == "quit") {
+    network_.sendMessage("has left the game.");
+    running_ = false;
+    return true;
+  }
+  if (line.rfind("say ", 0) == 0) {
+    std::string message = line.substr(4);
+    if (!message.empty()) {
+      network_.sendMessage(message);
+    }
+    return false;
+  }
+
+  std::istringstream stream(line);
+  std::string command;
+  stream >> command;
+  if (command == "play") {
+    size_t index = 0;
+    int targetSystemId = 0;
+    int hasCiv = 1;
+    if (!(stream >> index >> targetSystemId)) {
+      std::cout << "Usage: play <index> <targetSystem> [hasCiv 0|1]\n";
+      return false;
+    }
+    if (stream >> hasCiv) {
+      return playFromHand(index, targetSystemId, hasCiv != 0);
+    }
+    return playFromHand(index, targetSystemId, true);
+  }
+  if (command == "discard") {
+    size_t index = 0;
+    if (!(stream >> index)) {
+      std::cout << "Usage: discard <index>\n";
+      return false;
+    }
+    return discardFromHand(index);
+  }
+
+  std::cout << "Unknown command.\n";
+  return false;
+}
+
+bool Game::playFromHand(size_t index, int targetSystemId, bool targetHasCivilization) {
+  if (index >= playerHand_.size()) {
+    std::cout << "Invalid hand index.\n";
+    return false;
+  }
+  const auto cardEntry = playerHand_[index];
+  const auto* cardDef = cardCatalog_.findById(cardEntry.id);
+  if (!cardDef) {
+    std::cout << "Card not found.\n";
+    return false;
+  }
+  if (!rules_.resolveCardPlay(*cardDef, 0, targetSystemId, targetHasCivilization)) {
+    return false;
+  }
+  discardPile_.push_back(cardEntry);
+  playerHand_.erase(playerHand_.begin() + static_cast<long>(index));
+  drawCards(1);
+  return true;
+}
+
+bool Game::discardFromHand(size_t index) {
+  if (index >= playerHand_.size()) {
+    std::cout << "Invalid hand index.\n";
+    return false;
+  }
+  discardPile_.push_back(playerHand_[index]);
+  playerHand_.erase(playerHand_.begin() + static_cast<long>(index));
+  drawCards(1);
+  return true;
 }

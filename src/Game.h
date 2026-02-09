@@ -27,6 +27,13 @@ private:
   void runPreparationPhase();
   void runPlayPhase();
   void runResolutionPhase();
+  void initializeDeck();
+  void drawCards(int count);
+  void refillDeckIfNeeded();
+  void showHand() const;
+  bool handlePlayCommand(const std::string& line);
+  bool playFromHand(size_t index, int targetSystemId, bool targetHasCivilization);
+  bool discardFromHand(size_t index);
 
   // Placeholder hooks for multiplayer flow.
   void setupPlayers();
@@ -44,5 +51,8 @@ private:
   RoleCatalog roleCatalog_;
   std::vector<Card> playerHand_{};
   std::vector<Card> opponentHand_{};
+  std::vector<Card> deck_{};
+  std::vector<Card> discardPile_{};
+  bool running_ = true;
   std::optional<AiClient> aiClient_;
 };
