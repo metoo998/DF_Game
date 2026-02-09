@@ -11,8 +11,7 @@ Game::Game(const GameConfig& config)
     : config_(config), network_(config.network) {
   assets_.load();
 
-  initializeDeck();
-  drawCards(4);
+  playerStates_.assign(static_cast<size_t>(config_.network.maxPlayers), PlayerState{});
 
   if (config_.useAi) {
     aiClient_.emplace(config_.aiModelPath);
@@ -61,6 +60,7 @@ void Game::runPlayPhase() {
 
   pendingActions_.assign(static_cast<size_t>(config_.network.maxPlayers), PlayerAction{});
   pendingReady_.assign(static_cast<size_t>(config_.network.maxPlayers), false);
+  pendingAcks_.assign(static_cast<size_t>(config_.network.maxPlayers), false);
 
   showHand();
   std::cout << "Actions: play <index> <targetSystem> [hasCiv 0|1], discard <index>, pass, hand, say <msg>, end, quit\n";
@@ -85,6 +85,7 @@ void Game::runPlayPhase() {
   }
 
   if (network_.isHost()) {
+    int waitTicks = 0;
     while (running_) {
       collectRemoteActions();
       bool allReady = true;
@@ -96,9 +97,32 @@ void Game::runPlayPhase() {
       }
       if (allReady) {
         resolvePendingActions();
+        for (size_t i = 1; i < pendingAcks_.size(); ++i) {
+          pendingAcks_[i] = false;
+        }
+        int ackTicks = 0;
+        while (running_) {
+          collectRemoteActions();
+          bool allAcked = true;
+          for (size_t i = 1; i < pendingAcks_.size(); ++i) {
+            if (!pendingAcks_[i]) {
+              allAcked = false;
+              break;
+            }
+          }
+          if (allAcked || ackTicks >= 40) {
+            break;
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(50));
+          ++ackTicks;
+        }
         break;
       }
+      if (waitTicks >= 80) {
+        markMissingReadyAsPass();
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      ++waitTicks;
     }
   } else {
     bool sawReveal = false;
@@ -107,6 +131,10 @@ void Game::runPlayPhase() {
       for (const auto& message : network_.receiveMessages()) {
         if (message.payload.rfind("REVEAL ", 0) == 0) {
           std::cout << "[Reveal] " << message.payload.substr(7) << "\n";
+          sawReveal = true;
+        }
+        if (message.payload.rfind("REVEAL_END", 0) == 0) {
+          network_.sendRawMessage("ACK");
           sawReveal = true;
         }
       }
@@ -134,11 +162,18 @@ void Game::setupPlayers() {
   std::cout << "[Card Catalog] Loaded cards: " << cardCatalog_.all().size() << "\n";
   std::cout << "[Role Catalog] Loaded roles: " << roleCatalog_.all().size() << "\n";
 
+  for (int i = 0; i < config_.network.maxPlayers; ++i) {
+    initializePlayerDeck(i);
+    drawCards(i, 4);
+  }
+
   rules_.setSystemNeighbors(0, {1});
   rules_.setSystemNeighbors(1, {0, 2});
   rules_.setSystemNeighbors(2, {1});
   rules_.setPlayerSystem(0, 0);
-  rules_.setPlayerSystem(1, 2);
+  if (config_.network.maxPlayers > 1) {
+    rules_.setPlayerSystem(1, 2);
+  }
 }
 
 void Game::handleNetworkTick() {
@@ -154,40 +189,59 @@ void Game::resolveTurn() {
   // TODO: Resolve combat and update game state.
 }
 
-void Game::initializeDeck() {
-  deck_.clear();
-  for (const auto& card : cardCatalog_.all()) {
-    deck_.push_back({card.id, card.title, card.description, card.effectType});
-  }
-  std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
-  std::shuffle(deck_.begin(), deck_.end(), rng);
-}
-
-void Game::drawCards(int count) {
-  for (int i = 0; i < count; ++i) {
-    refillDeckIfNeeded();
-    if (deck_.empty()) {
-      break;
-    }
-    playerHand_.push_back(deck_.back());
-    deck_.pop_back();
-  }
-}
-
-void Game::refillDeckIfNeeded() {
-  if (!deck_.empty() || discardPile_.empty()) {
+void Game::initializePlayerDeck(int playerId) {
+  if (playerId < 0 || playerId >= static_cast<int>(playerStates_.size())) {
     return;
   }
-  deck_ = std::move(discardPile_);
-  discardPile_.clear();
-  std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
-  std::shuffle(deck_.begin(), deck_.end(), rng);
+  auto& state = playerStates_[playerId];
+  state.deck.clear();
+  state.discard.clear();
+  for (const auto& card : cardCatalog_.all()) {
+    state.deck.push_back({card.id, card.title, card.description, card.effectType});
+  }
+  std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                   static_cast<unsigned>(playerId));
+  std::shuffle(state.deck.begin(), state.deck.end(), rng);
+}
+
+void Game::drawCards(int playerId, int count) {
+  if (playerId < 0 || playerId >= static_cast<int>(playerStates_.size())) {
+    return;
+  }
+  auto& state = playerStates_[playerId];
+  for (int i = 0; i < count; ++i) {
+    refillDeckIfNeeded(playerId);
+    if (state.deck.empty()) {
+      break;
+    }
+    state.hand.push_back(state.deck.back());
+    state.deck.pop_back();
+  }
+}
+
+void Game::refillDeckIfNeeded(int playerId) {
+  if (playerId < 0 || playerId >= static_cast<int>(playerStates_.size())) {
+    return;
+  }
+  auto& state = playerStates_[playerId];
+  if (!state.deck.empty() || state.discard.empty()) {
+    return;
+  }
+  state.deck = std::move(state.discard);
+  state.discard.clear();
+  std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                   static_cast<unsigned>(playerId));
+  std::shuffle(state.deck.begin(), state.deck.end(), rng);
 }
 
 void Game::showHand() const {
-  std::cout << "[Hand] " << playerHand_.size() << " cards\n";
-  for (size_t i = 0; i < playerHand_.size(); ++i) {
-    std::cout << "  [" << i << "] " << playerHand_[i].name << "\n";
+  if (playerStates_.empty()) {
+    return;
+  }
+  const auto& hand = playerStates_[0].hand;
+  std::cout << "[Hand] " << hand.size() << " cards\n";
+  for (size_t i = 0; i < hand.size(); ++i) {
+    std::cout << "  [" << i << "] " << hand[i].name << "\n";
   }
 }
 
@@ -250,11 +304,11 @@ bool Game::handlePlayCommand(const std::string& line) {
 }
 
 bool Game::playFromHand(size_t index, int targetSystemId, bool targetHasCivilization) {
-  if (index >= playerHand_.size()) {
+  if (playerStates_.empty() || index >= playerStates_[0].hand.size()) {
     std::cout << "Invalid hand index.\n";
     return false;
   }
-  const auto cardEntry = playerHand_[index];
+  const auto cardEntry = playerStates_[0].hand[index];
   pendingActions_[0] = PlayerAction{ActionType::Play, cardEntry.id, targetSystemId,
                                     targetHasCivilization, static_cast<int>(index)};
   pendingReady_[0] = true;
@@ -265,11 +319,11 @@ bool Game::playFromHand(size_t index, int targetSystemId, bool targetHasCiviliza
 }
 
 bool Game::discardFromHand(size_t index) {
-  if (index >= playerHand_.size()) {
+  if (playerStates_.empty() || index >= playerStates_[0].hand.size()) {
     std::cout << "Invalid hand index.\n";
     return false;
   }
-  pendingActions_[0] = PlayerAction{ActionType::Discard, playerHand_[index].id, -1, true,
+  pendingActions_[0] = PlayerAction{ActionType::Discard, playerStates_[0].hand[index].id, -1, true,
                                     static_cast<int>(index)};
   pendingReady_[0] = true;
   if (!network_.isHost()) {
@@ -308,6 +362,13 @@ void Game::collectRemoteActions() {
       }
       continue;
     }
+    if (message.payload.rfind("ACK", 0) == 0) {
+      int playerId = ensureRemotePlayerId(message.sender);
+      if (playerId >= 0 && playerId < static_cast<int>(pendingAcks_.size())) {
+        pendingAcks_[playerId] = true;
+      }
+      continue;
+    }
     if (message.payload.rfind("REVEAL ", 0) == 0) {
       std::cout << "[Reveal] " << message.payload.substr(7) << "\n";
       continue;
@@ -324,11 +385,11 @@ void Game::resolvePendingActions() {
     }
 
     std::string actionSummary;
-    if (action.type == ActionType::Play) {
+    if (!validateAndApplyAction(static_cast<int>(playerId), action)) {
+      actionSummary = "player " + std::to_string(playerId) + " action invalid -> pass";
+    } else if (action.type == ActionType::Play) {
       const auto* cardDef = cardCatalog_.findById(action.cardId);
       if (cardDef) {
-        rules_.resolveCardPlay(*cardDef, static_cast<int>(playerId), action.targetSystemId,
-                               action.targetHasCivilization);
         actionSummary = "player " + std::to_string(playerId) + " played " + cardDef->title;
       }
     } else if (action.type == ActionType::Discard) {
@@ -341,16 +402,8 @@ void Game::resolvePendingActions() {
       network_.sendRawMessage("REVEAL " + actionSummary);
       std::cout << "[Reveal] " << actionSummary << "\n";
     }
-
-    if (playerId == 0) {
-      if (action.handIndex >= 0 &&
-          action.handIndex < static_cast<int>(playerHand_.size())) {
-        discardPile_.push_back(playerHand_[static_cast<size_t>(action.handIndex)]);
-        playerHand_.erase(playerHand_.begin() + action.handIndex);
-        drawCards(1);
-      }
-    }
   }
+  network_.sendRawMessage("REVEAL_END");
 }
 
 void Game::sendActionToHost(const PlayerAction& action) {
@@ -377,5 +430,64 @@ int Game::ensureRemotePlayerId(const std::string& name) {
     return -1;
   }
   remotePlayerIds_[name] = nextId;
+  if (nextId >= static_cast<int>(playerStates_.size())) {
+    return nextId;
+  }
+  if (playerStates_[nextId].deck.empty() && playerStates_[nextId].hand.empty()) {
+    initializePlayerDeck(nextId);
+    drawCards(nextId, 4);
+  }
   return nextId;
+}
+
+bool Game::validateAndApplyAction(int playerId, const PlayerAction& action) {
+  if (playerId < 0 || playerId >= static_cast<int>(playerStates_.size())) {
+    return false;
+  }
+  auto& state = playerStates_[playerId];
+  if (action.type == ActionType::Pass) {
+    return true;
+  }
+  if (action.type != ActionType::Play && action.type != ActionType::Discard) {
+    return false;
+  }
+
+  auto findById = [&](int cardId) -> int {
+    for (size_t i = 0; i < state.hand.size(); ++i) {
+      if (state.hand[i].id == cardId) {
+        return static_cast<int>(i);
+      }
+    }
+    return -1;
+  };
+
+  int handIndex = findById(action.cardId);
+  if (handIndex == -1) {
+    return false;
+  }
+
+  if (action.type == ActionType::Play) {
+    const auto* cardDef = cardCatalog_.findById(action.cardId);
+    if (!cardDef) {
+      return false;
+    }
+    if (!rules_.resolveCardPlay(*cardDef, playerId, action.targetSystemId,
+                                action.targetHasCivilization)) {
+      return false;
+    }
+  }
+
+  state.discard.push_back(state.hand[static_cast<size_t>(handIndex)]);
+  state.hand.erase(state.hand.begin() + handIndex);
+  drawCards(playerId, 1);
+  return true;
+}
+
+void Game::markMissingReadyAsPass() {
+  for (size_t i = 0; i < pendingReady_.size(); ++i) {
+    if (!pendingReady_[i]) {
+      pendingActions_[i] = PlayerAction{ActionType::Pass, -1, -1, true, -1};
+      pendingReady_[i] = true;
+    }
+  }
 }

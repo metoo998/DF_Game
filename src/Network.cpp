@@ -213,7 +213,7 @@ std::vector<NetworkMessage> NetworkSession::drainSocket(Connection& connection) 
     }
 
     if (line.rfind("ACT ", 0) == 0 || line.rfind("READY", 0) == 0 ||
-        line.rfind("REVEAL ", 0) == 0) {
+        line.rfind("REVEAL ", 0) == 0 || line.rfind("ACK", 0) == 0) {
       messages.push_back({connection.name, line});
       continue;
     }
@@ -249,7 +249,8 @@ std::vector<NetworkMessage> NetworkSession::receiveMessages() {
         auto drained = drainSocket(connection);
         for (auto& msg : drained) {
           messages.push_back(msg);
-          if (msg.payload.rfind("ACT ", 0) == 0 || msg.payload.rfind("READY", 0) == 0) {
+          if (msg.payload.rfind("ACT ", 0) == 0 || msg.payload.rfind("READY", 0) == 0 ||
+              msg.payload.rfind("ACK", 0) == 0) {
             continue;
           }
           if (msg.payload.rfind("REVEAL ", 0) == 0) {

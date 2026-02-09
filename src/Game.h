@@ -38,14 +38,21 @@ private:
     int handIndex = -1;
   };
 
+  struct PlayerState {
+    std::vector<Card> hand{};
+    std::vector<Card> deck{};
+    std::vector<Card> discard{};
+    bool connected = true;
+  };
+
   void tick();
 
   void runPreparationPhase();
   void runPlayPhase();
   void runResolutionPhase();
-  void initializeDeck();
-  void drawCards(int count);
-  void refillDeckIfNeeded();
+  void initializePlayerDeck(int playerId);
+  void drawCards(int playerId, int count);
+  void refillDeckIfNeeded(int playerId);
   void showHand() const;
   bool handlePlayCommand(const std::string& line);
   bool playFromHand(size_t index, int targetSystemId, bool targetHasCivilization);
@@ -54,6 +61,8 @@ private:
   void resolvePendingActions();
   void sendActionToHost(const PlayerAction& action);
   int ensureRemotePlayerId(const std::string& name);
+  bool validateAndApplyAction(int playerId, const PlayerAction& action);
+  void markMissingReadyAsPass();
 
   // Placeholder hooks for multiplayer flow.
   void setupPlayers();
@@ -69,13 +78,11 @@ private:
   GameRules rules_;
   CardCatalog cardCatalog_;
   RoleCatalog roleCatalog_;
-  std::vector<Card> playerHand_{};
-  std::vector<Card> opponentHand_{};
-  std::vector<Card> deck_{};
-  std::vector<Card> discardPile_{};
+  std::vector<PlayerState> playerStates_{};
   bool running_ = true;
   std::vector<PlayerAction> pendingActions_{};
   std::vector<bool> pendingReady_{};
+  std::vector<bool> pendingAcks_{};
   std::unordered_map<std::string, int> remotePlayerIds_{};
   std::optional<AiClient> aiClient_;
 };
