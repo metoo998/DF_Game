@@ -143,6 +143,7 @@ private:
   int computeProductionForPlayer(int playerId) const;
   std::vector<ObservedSystemState> buildObservationSnapshot(int playerId,
                                                             const std::string& prefix) const;
+  std::vector<WarningReport> buildWarnings(int playerId) const;
   void resetPlayersForTimeInterference(int ownerId);
   int shortestDistance(int startSystemId, int targetSystemId) const;
 

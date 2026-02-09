@@ -61,7 +61,7 @@ ObservationReport GameRules::generateObservations(int playerId) {
   }
 
   report.systems = std::move(combined);
-  report.warnings.push_back({1, "Incoming projectile within distance 1."});
+  report.warnings = buildWarnings(playerId);
   return report;
 }
 
@@ -547,6 +547,27 @@ std::vector<ObservedSystemState> GameRules::buildObservationSnapshot(
   return snapshot;
 }
 
+std::vector<WarningReport> GameRules::buildWarnings(int playerId) const {
+  std::vector<WarningReport> warnings;
+  if (playerId < 0 || playerId >= static_cast<int>(playerSystems_.size())) {
+    return warnings;
+  }
+  int origin = playerSystems_[playerId];
+  if (origin < 0) {
+    return warnings;
+  }
+  for (const auto& projectile : projectiles_) {
+    if (projectile.remainingTime <= 0) {
+      continue;
+    }
+    int distance = shortestDistance(origin, projectile.targetSystemId);
+    if (distance == 1) {
+      warnings.push_back({projectile.targetSystemId, "Incoming projectile within distance 1."});
+    }
+  }
+  return warnings;
+}
+
 void GameRules::resetPlayersForTimeInterference(int ownerId) {
   for (size_t playerId = 0; playerId < players_.size(); ++playerId) {
     if (static_cast<int>(playerId) == ownerId) {
@@ -626,7 +647,7 @@ void GameRules::updateVisibility() {
     }
     for (size_t systemId = 0; systemId < systems_.size(); ++systemId) {
       int distance = shortestDistance(origin, static_cast<int>(systemId));
-      if (distance < 0 || distance > 2) {
+      if (distance < 0) {
         continue;
       }
       const auto& systemState = systems_[systemId];
