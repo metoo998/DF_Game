@@ -24,6 +24,7 @@ struct Projectile {
   int targetSystemId = -1;
   int level = 0;
   int cardId = 0;
+  int expeditionEnergy = 0;
 };
 
 struct PlayerParams {
@@ -33,6 +34,12 @@ struct PlayerParams {
   bool alive = true;
   int defenseLevel = 0;
   std::string pendingBroadcastChoice = "";
+  int pendingExpeditionEnergy = 0;
+  std::string pendingExpeditionDefenseChoice = "";
+  bool nearDeath = false;
+  bool revealedPosition = false;
+  int skipPlayRounds = 0;
+  int sharesObservationWith = -1;
 };
 
 struct SystemState {
@@ -41,6 +48,8 @@ struct SystemState {
   bool destroyed = false;
   bool occupied = false;
   bool colonized = false;
+  int ownerId = -1;
+  int occupierId = -1;
   std::vector<int> neighbors{};
 };
 
@@ -81,7 +90,7 @@ public:
                        bool targetHasCivilization);
 
   void queueProjectile(const std::string& cardName, int ownerId, int targetSystemId, int level,
-                       int cardId);
+                       int cardId, int expeditionEnergy);
   void applyTypeIIEffect(const std::string& cardName, int ownerId);
   void applyTypeIIIEffect(const std::string& cardName, int ownerId);
   void applyTimeInterference(int systemId, int ownerId, bool targetHasCivilization);
@@ -90,6 +99,8 @@ public:
 
   void addPlayer(int playerId);
   void setBroadcastResponseChoice(int playerId, const std::string& choice);
+  void setExpeditionEnergyChoice(int playerId, int energy);
+  void setExpeditionDefenseChoice(int playerId, const std::string& choice);
   void setPlayerSystem(int playerId, int systemId);
   int playerSystem(int playerId) const;
   const std::vector<Projectile>& projectiles() const { return projectiles_; }
@@ -100,6 +111,7 @@ private:
   void resolveTypeI();
   void resolveStrikeProjectile(const Projectile& projectile);
   void resolveBroadcastProjectile(const Projectile& projectile);
+  void resolveInterstellarExpedition(const Projectile& projectile);
   bool playerHasListeningBase(int playerId) const;
   std::string broadcastVariant(const Projectile& projectile) const;
   bool isSystemWithinDistance(int startSystemId, int targetSystemId, int distance) const;
@@ -107,6 +119,12 @@ private:
   void updatePlayerParams(int playerId);
   bool spendEnergy(int playerId, int cost);
   void addBuilding(int playerId, int cardId);
+  int consumePendingExpeditionEnergy(int playerId);
+  std::string consumeExpeditionDefenseChoice(int playerId);
+  int firstPlayerInSystem(int systemId, int excludePlayerId) const;
+  void applyOccupation(int systemId, int occupierId, int ownerId);
+  void applyColonization(int systemId, int colonizerId, int ownerId);
+  int computeProductionForPlayer(int playerId) const;
 
   std::vector<Projectile> projectiles_{};
   std::vector<PlayerParams> players_{};

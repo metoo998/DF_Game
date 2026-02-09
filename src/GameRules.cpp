@@ -15,7 +15,11 @@ PhaseReport GameRules::runPreparation(int playerId) {
 }
 
 PhaseReport GameRules::runPlay(int playerId) {
-  (void)playerId;
+  addPlayer(playerId);
+  if (players_[playerId].skipPlayRounds > 0) {
+    players_[playerId].skipPlayRounds -= 1;
+    return {Phase::Play, "Play: skipped due to expedition failure."};
+  }
   return {Phase::Play, "Play: simultaneous discard/play decisions (hidden)."};
 }
 
@@ -62,7 +66,17 @@ bool GameRules::resolveCardPlay(const CardDefinition& card, int playerId, int ta
     case CardCategory::Broadcast:
     case CardCategory::Strike: {
       int level = card.level;
-      queueProjectile(card.title, playerId, targetSystemId, level, card.id);
+      int expeditionEnergy = 0;
+      if (card.id == 18) {
+        int extraEnergy = consumePendingExpeditionEnergy(playerId);
+        if (extraEnergy > 0 && !spendEnergy(playerId, extraEnergy)) {
+          players_[playerId].energy += card.cost;
+          std::cout << "[Rules] Not enough energy for Interstellar Expedition extra cost.\n";
+          return false;
+        }
+        expeditionEnergy = card.cost + extraEnergy;
+      }
+      queueProjectile(card.title, playerId, targetSystemId, level, card.id, expeditionEnergy);
       if (card.id == 14) {
         applyTechLockdown(targetSystemId, playerId);
       }
@@ -94,8 +108,8 @@ bool GameRules::resolveCardPlay(const CardDefinition& card, int playerId, int ta
 }
 
 void GameRules::queueProjectile(const std::string& cardName, int ownerId, int targetSystemId,
-                                int level, int cardId) {
-  projectiles_.push_back({cardName, 1, ownerId, targetSystemId, level, cardId});
+                                int level, int cardId, int expeditionEnergy) {
+  projectiles_.push_back({cardName, 1, ownerId, targetSystemId, level, cardId, expeditionEnergy});
   std::cout << "[Rules] Queued projectile from card: " << cardName << " -> system "
             << targetSystemId << "\n";
 }
@@ -124,6 +138,8 @@ void GameRules::applyTimeInterference(int systemId, int ownerId, bool targetHasC
   target.isDimensionalized = false;
   target.occupied = false;
   target.colonized = false;
+  target.ownerId = -1;
+  target.occupierId = -1;
   std::cout << "[Rules] Time Interference erased civilization in system " << systemId
             << " by player " << ownerId << ".\n";
 }
@@ -156,10 +172,25 @@ void GameRules::setBroadcastResponseChoice(int playerId, const std::string& choi
   }
 }
 
+void GameRules::setExpeditionEnergyChoice(int playerId, int energy) {
+  addPlayer(playerId);
+  if (energy == 0 || energy == 5 || energy == 10 || energy == 20) {
+    players_[playerId].pendingExpeditionEnergy = energy;
+  }
+}
+
+void GameRules::setExpeditionDefenseChoice(int playerId, const std::string& choice) {
+  addPlayer(playerId);
+  if (choice == "fight" || choice == "surrender") {
+    players_[playerId].pendingExpeditionDefenseChoice = choice;
+  }
+}
+
 void GameRules::setPlayerSystem(int playerId, int systemId) {
   addPlayer(playerId);
   playerSystems_[playerId] = systemId;
   addSystem(systemId);
+  systems_[systemId].ownerId = playerId;
 }
 
 int GameRules::playerSystem(int playerId) const {
@@ -202,7 +233,7 @@ void GameRules::resolveStrikeProjectile(const Projectile& projectile) {
     return;
   }
   if (projectile.cardId == 18) {
-    applyInterstellarExpedition(projectile.targetSystemId, projectile.ownerId);
+    resolveInterstellarExpedition(projectile);
     return;
   }
   if (projectile.cardId == 15) {
@@ -281,6 +312,54 @@ void GameRules::resolveBroadcastProjectile(const Projectile& projectile) {
   players_[responder].pendingBroadcastChoice.clear();
 }
 
+void GameRules::resolveInterstellarExpedition(const Projectile& projectile) {
+  addSystem(projectile.targetSystemId);
+  int defenderId = firstPlayerInSystem(projectile.targetSystemId, projectile.ownerId);
+
+  if (defenderId == -1) {
+    applyColonization(projectile.targetSystemId, projectile.ownerId, -1);
+    std::cout << "[Rules] Interstellar Expedition colonized empty system "
+              << projectile.targetSystemId << ".\n";
+    return;
+  }
+
+  std::string defenseChoice = consumeExpeditionDefenseChoice(defenderId);
+  if (defenseChoice.empty()) {
+    defenseChoice = "fight";
+  }
+
+  int attackerInvestment = projectile.expeditionEnergy > 0 ? projectile.expeditionEnergy : 4;
+  int defenderEnergyAtDecision = players_[defenderId].energy;
+
+  if (defenseChoice == "surrender") {
+    int tribute = players_[defenderId].energy / 2;
+    players_[defenderId].energy -= tribute;
+    players_[projectile.ownerId].energy += tribute;
+    players_[defenderId].sharesObservationWith = projectile.ownerId;
+    applyOccupation(projectile.targetSystemId, projectile.ownerId, defenderId);
+    std::cout << "[Rules] Expedition surrender: defender " << defenderId
+              << " paid tribute and is now occupied.\n";
+    return;
+  }
+
+  int defenseCost = attackerInvestment / 2;
+  if (players_[defenderId].energy >= defenseCost) {
+    players_[defenderId].energy -= defenseCost;
+  }
+
+  if (defenderEnergyAtDecision > attackerInvestment) {
+    players_[projectile.ownerId].skipPlayRounds = 1;
+    players_[projectile.ownerId].revealedPosition = true;
+    std::cout << "[Rules] Expedition failed: attacker " << projectile.ownerId
+              << " skipped next play phase and revealed position.\n";
+    return;
+  }
+
+  players_[defenderId].nearDeath = true;
+  std::cout << "[Rules] Expedition battle lost: defender " << defenderId
+            << " is in near-death state.\n";
+}
+
 bool GameRules::playerHasListeningBase(int playerId) const {
   if (playerId < 0 || playerId >= static_cast<int>(playerBuildings_.size())) {
     return false;
@@ -298,6 +377,83 @@ std::string GameRules::broadcastVariant(const Projectile& projectile) const {
     return "stealth";
   }
   return "cooperate";
+}
+
+int GameRules::consumePendingExpeditionEnergy(int playerId) {
+  addPlayer(playerId);
+  int energy = players_[playerId].pendingExpeditionEnergy;
+  players_[playerId].pendingExpeditionEnergy = 0;
+  if (energy == 0 || energy == 5 || energy == 10 || energy == 20) {
+    return energy;
+  }
+  return 0;
+}
+
+std::string GameRules::consumeExpeditionDefenseChoice(int playerId) {
+  addPlayer(playerId);
+  std::string choice = players_[playerId].pendingExpeditionDefenseChoice;
+  players_[playerId].pendingExpeditionDefenseChoice.clear();
+  if (choice == "fight" || choice == "surrender") {
+    return choice;
+  }
+  return "";
+}
+
+int GameRules::firstPlayerInSystem(int systemId, int excludePlayerId) const {
+  for (size_t playerId = 0; playerId < playerSystems_.size(); ++playerId) {
+    if (static_cast<int>(playerId) == excludePlayerId) {
+      continue;
+    }
+    if (playerSystems_[playerId] == systemId && players_[playerId].alive) {
+      return static_cast<int>(playerId);
+    }
+  }
+  return -1;
+}
+
+void GameRules::applyOccupation(int systemId, int occupierId, int ownerId) {
+  addSystem(systemId);
+  auto& target = systems_[systemId];
+  target.occupied = true;
+  target.colonized = false;
+  target.occupierId = occupierId;
+  target.ownerId = ownerId;
+}
+
+void GameRules::applyColonization(int systemId, int colonizerId, int ownerId) {
+  addSystem(systemId);
+  auto& target = systems_[systemId];
+  target.colonized = true;
+  target.occupied = false;
+  target.occupierId = colonizerId;
+  target.ownerId = ownerId;
+}
+
+int GameRules::computeProductionForPlayer(int playerId) const {
+  if (playerId < 0 || playerId >= static_cast<int>(playerBuildings_.size())) {
+    return 0;
+  }
+  int energyGain = 0;
+  for (int cardId : playerBuildings_[playerId]) {
+    switch (cardId) {
+      case 4:
+      case 5:
+        energyGain += 1;
+        break;
+      case 6:
+        energyGain += 2;
+        break;
+      case 7:
+        energyGain += 3;
+        break;
+      case 17:
+        energyGain += 7;
+        break;
+      default:
+        break;
+    }
+  }
+  return energyGain;
 }
 
 bool GameRules::isSystemWithinDistance(int startSystemId, int targetSystemId,
@@ -344,28 +500,32 @@ bool GameRules::isSystemWithinDistance(int startSystemId, int targetSystemId,
   return false;
 }
 void GameRules::updateTypeIII() {
-  for (size_t playerId = 0; playerId < playerBuildings_.size(); ++playerId) {
-    int energyGain = 0;
-    for (int cardId : playerBuildings_[playerId]) {
-      switch (cardId) {
-        case 4:
-        case 5:
-          energyGain += 1;
-          break;
-        case 6:
-          energyGain += 2;
-          break;
-        case 7:
-          energyGain += 3;
-          break;
-        case 17:
-          energyGain += 7;
-          break;
-        default:
-          break;
-      }
+  std::vector<int> production(players_.size(), 0);
+  for (size_t playerId = 0; playerId < players_.size(); ++playerId) {
+    production[playerId] = computeProductionForPlayer(static_cast<int>(playerId));
+  }
+
+  for (const auto& system : systems_) {
+    if (system.occupierId == -1 || system.ownerId == -1) {
+      continue;
     }
-    players_[playerId].energy += energyGain;
+    if (system.ownerId >= static_cast<int>(production.size()) ||
+        system.occupierId >= static_cast<int>(production.size())) {
+      continue;
+    }
+    if (system.occupied) {
+      int transfer = production[system.ownerId] / 2;
+      production[system.ownerId] -= transfer;
+      production[system.occupierId] += transfer;
+    } else if (system.colonized) {
+      int transfer = production[system.ownerId];
+      production[system.ownerId] -= transfer;
+      production[system.occupierId] += transfer;
+    }
+  }
+
+  for (size_t playerId = 0; playerId < production.size(); ++playerId) {
+    players_[playerId].energy += production[playerId];
   }
   std::cout << "[Rules] Updating Type III effects (buildings/planet states).\n";
 }
