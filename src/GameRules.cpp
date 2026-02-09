@@ -1,6 +1,7 @@
 #include "GameRules.h"
 #include "Cards.h"
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <random>
@@ -29,12 +30,31 @@ PhaseReport GameRules::runResolution(int playerId) {
 }
 
 ObservationReport GameRules::generateObservations(int playerId) {
-  (void)playerId;
+  addPlayer(playerId);
   ObservationReport report;
   addSystem(1);
   addSystem(2);
-  report.systems.push_back({1, system(1).starExists ? "Star present" : "Star absent", 0});
-  report.systems.push_back({2, system(2).isDimensionalized ? "2D collapse" : "Star present", 1});
+  std::vector<ObservedSystemState> combined;
+  std::vector<int> seenSystems;
+  auto appendUnique = [&](const std::vector<ObservedSystemState>& snapshot) {
+    for (const auto& systemState : snapshot) {
+      if (std::find(seenSystems.begin(), seenSystems.end(), systemState.systemId) !=
+          seenSystems.end()) {
+        continue;
+      }
+      seenSystems.push_back(systemState.systemId);
+      combined.push_back(systemState);
+    }
+  };
+
+  appendUnique(buildObservationSnapshot(playerId, ""));
+  for (size_t otherId = 0; otherId < players_.size(); ++otherId) {
+    if (players_[otherId].sharesObservationWith == playerId) {
+      appendUnique(buildObservationSnapshot(static_cast<int>(otherId), "Shared: "));
+    }
+  }
+
+  report.systems = std::move(combined);
   report.warnings.push_back({1, "Incoming projectile within distance 1."});
   return report;
 }
@@ -454,6 +474,22 @@ int GameRules::computeProductionForPlayer(int playerId) const {
     }
   }
   return energyGain;
+}
+
+std::vector<ObservedSystemState> GameRules::buildObservationSnapshot(
+    int playerId, const std::string& prefix) const {
+  (void)playerId;
+  std::vector<ObservedSystemState> snapshot;
+  if (systems_.size() <= 2) {
+    return snapshot;
+  }
+  const auto& systemOne = systems_[1];
+  const auto& systemTwo = systems_[2];
+  snapshot.push_back(
+      {1, prefix + (systemOne.starExists ? "Star present" : "Star absent"), 0});
+  snapshot.push_back(
+      {2, prefix + (systemTwo.isDimensionalized ? "2D collapse" : "Star present"), 1});
+  return snapshot;
 }
 
 bool GameRules::isSystemWithinDistance(int startSystemId, int targetSystemId,

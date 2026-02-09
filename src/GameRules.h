@@ -125,6 +125,8 @@ private:
   void applyOccupation(int systemId, int occupierId, int ownerId);
   void applyColonization(int systemId, int colonizerId, int ownerId);
   int computeProductionForPlayer(int playerId) const;
+  std::vector<ObservedSystemState> buildObservationSnapshot(int playerId,
+                                                            const std::string& prefix) const;
 
   std::vector<Projectile> projectiles_{};
   std::vector<PlayerParams> players_{};
