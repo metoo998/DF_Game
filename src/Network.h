@@ -31,6 +31,7 @@ public:
   void shutdown();
 
   void sendMessage(const std::string& message);
+  void sendRawMessage(const std::string& message);
   std::vector<NetworkMessage> receiveMessages();
   bool isHost() const;
 

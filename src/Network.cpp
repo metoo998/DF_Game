@@ -183,6 +183,14 @@ void NetworkSession::sendMessage(const std::string& message) {
   }
 }
 
+void NetworkSession::sendRawMessage(const std::string& message) {
+  if (config_.role == NetworkRole::Host) {
+    broadcast(message);
+  } else if (hostConnection_.socket != kInvalidSocket) {
+    sendLine(hostConnection_.socket, message);
+  }
+}
+
 std::vector<NetworkMessage> NetworkSession::drainSocket(Connection& connection) {
   std::vector<NetworkMessage> messages;
   char buffer[512];
@@ -201,6 +209,12 @@ std::vector<NetworkMessage> NetworkSession::drainSocket(Connection& connection) 
     if (line.rfind("JOIN ", 0) == 0) {
       connection.name = line.substr(5);
       messages.push_back({"System", connection.name + " joined."});
+      continue;
+    }
+
+    if (line.rfind("ACT ", 0) == 0 || line.rfind("READY", 0) == 0 ||
+        line.rfind("REVEAL ", 0) == 0) {
+      messages.push_back({connection.name, line});
       continue;
     }
 
@@ -235,6 +249,13 @@ std::vector<NetworkMessage> NetworkSession::receiveMessages() {
         auto drained = drainSocket(connection);
         for (auto& msg : drained) {
           messages.push_back(msg);
+          if (msg.payload.rfind("ACT ", 0) == 0 || msg.payload.rfind("READY", 0) == 0) {
+            continue;
+          }
+          if (msg.payload.rfind("REVEAL ", 0) == 0) {
+            broadcast(msg.payload, connection.socket);
+            continue;
+          }
           broadcast("MSG " + msg.sender + ": " + msg.payload, connection.socket);
         }
       }

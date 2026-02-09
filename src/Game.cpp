@@ -59,8 +59,11 @@ void Game::runPlayPhase() {
   auto report = rules_.runPlay(0);
   std::cout << "[Phase] " << report.summary << "\n";
 
+  pendingActions_.assign(static_cast<size_t>(config_.network.maxPlayers), PlayerAction{});
+  pendingReady_.assign(static_cast<size_t>(config_.network.maxPlayers), false);
+
   showHand();
-  std::cout << "Actions: play <index> <targetSystem> [hasCiv 0|1], discard <index>, hand, say <msg>, end, quit\n";
+  std::cout << "Actions: play <index> <targetSystem> [hasCiv 0|1], discard <index>, pass, hand, say <msg>, end, quit\n";
   while (running_) {
     std::cout << "action> ";
     std::string line;
@@ -69,10 +72,49 @@ void Game::runPlayPhase() {
       break;
     }
     if (line == "end") {
+      handlePlayCommand("pass");
       break;
     }
     if (handlePlayCommand(line)) {
       break;
+    }
+  }
+
+  if (!running_) {
+    return;
+  }
+
+  if (network_.isHost()) {
+    while (running_) {
+      collectRemoteActions();
+      bool allReady = true;
+      for (size_t i = 0; i < pendingReady_.size(); ++i) {
+        if (!pendingReady_[i]) {
+          allReady = false;
+          break;
+        }
+      }
+      if (allReady) {
+        resolvePendingActions();
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+  } else {
+    bool sawReveal = false;
+    int waitTicks = 0;
+    while (running_) {
+      for (const auto& message : network_.receiveMessages()) {
+        if (message.payload.rfind("REVEAL ", 0) == 0) {
+          std::cout << "[Reveal] " << message.payload.substr(7) << "\n";
+          sawReveal = true;
+        }
+      }
+      if (sawReveal || waitTicks >= 40) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      ++waitTicks;
     }
   }
 }
@@ -178,10 +220,13 @@ bool Game::handlePlayCommand(const std::string& line) {
       std::cout << "Usage: play <index> <targetSystem> [hasCiv 0|1]\n";
       return false;
     }
+    bool result = false;
     if (stream >> hasCiv) {
-      return playFromHand(index, targetSystemId, hasCiv != 0);
+      result = playFromHand(index, targetSystemId, hasCiv != 0);
+    } else {
+      result = playFromHand(index, targetSystemId, true);
     }
-    return playFromHand(index, targetSystemId, true);
+    return result;
   }
   if (command == "discard") {
     size_t index = 0;
@@ -190,6 +235,14 @@ bool Game::handlePlayCommand(const std::string& line) {
       return false;
     }
     return discardFromHand(index);
+  }
+  if (command == "pass") {
+    pendingActions_[0] = PlayerAction{ActionType::Pass, -1, -1, true, -1};
+    pendingReady_[0] = true;
+    if (!network_.isHost()) {
+      sendActionToHost(pendingActions_[0]);
+    }
+    return true;
   }
 
   std::cout << "Unknown command.\n";
@@ -202,17 +255,12 @@ bool Game::playFromHand(size_t index, int targetSystemId, bool targetHasCiviliza
     return false;
   }
   const auto cardEntry = playerHand_[index];
-  const auto* cardDef = cardCatalog_.findById(cardEntry.id);
-  if (!cardDef) {
-    std::cout << "Card not found.\n";
-    return false;
+  pendingActions_[0] = PlayerAction{ActionType::Play, cardEntry.id, targetSystemId,
+                                    targetHasCivilization, static_cast<int>(index)};
+  pendingReady_[0] = true;
+  if (!network_.isHost()) {
+    sendActionToHost(pendingActions_[0]);
   }
-  if (!rules_.resolveCardPlay(*cardDef, 0, targetSystemId, targetHasCivilization)) {
-    return false;
-  }
-  discardPile_.push_back(cardEntry);
-  playerHand_.erase(playerHand_.begin() + static_cast<long>(index));
-  drawCards(1);
   return true;
 }
 
@@ -221,8 +269,113 @@ bool Game::discardFromHand(size_t index) {
     std::cout << "Invalid hand index.\n";
     return false;
   }
-  discardPile_.push_back(playerHand_[index]);
-  playerHand_.erase(playerHand_.begin() + static_cast<long>(index));
-  drawCards(1);
+  pendingActions_[0] = PlayerAction{ActionType::Discard, playerHand_[index].id, -1, true,
+                                    static_cast<int>(index)};
+  pendingReady_[0] = true;
+  if (!network_.isHost()) {
+    sendActionToHost(pendingActions_[0]);
+  }
   return true;
+}
+
+void Game::collectRemoteActions() {
+  for (const auto& message : network_.receiveMessages()) {
+    if (message.payload.rfind("ACT ", 0) == 0) {
+      std::istringstream stream(message.payload);
+      std::string act;
+      std::string type;
+      PlayerAction action;
+      int hasCiv = 1;
+      stream >> act >> type >> action.cardId >> action.targetSystemId >> hasCiv;
+      action.targetHasCivilization = hasCiv != 0;
+      if (type == "play") {
+        action.type = ActionType::Play;
+      } else if (type == "discard") {
+        action.type = ActionType::Discard;
+      } else if (type == "pass") {
+        action.type = ActionType::Pass;
+      }
+      int playerId = ensureRemotePlayerId(message.sender);
+      if (playerId >= 0 && playerId < static_cast<int>(pendingActions_.size())) {
+        pendingActions_[playerId] = action;
+      }
+      continue;
+    }
+    if (message.payload.rfind("READY", 0) == 0) {
+      int playerId = ensureRemotePlayerId(message.sender);
+      if (playerId >= 0 && playerId < static_cast<int>(pendingReady_.size())) {
+        pendingReady_[playerId] = true;
+      }
+      continue;
+    }
+    if (message.payload.rfind("REVEAL ", 0) == 0) {
+      std::cout << "[Reveal] " << message.payload.substr(7) << "\n";
+      continue;
+    }
+    std::cout << "[Chat] " << message.payload << "\n";
+  }
+}
+
+void Game::resolvePendingActions() {
+  for (size_t playerId = 0; playerId < pendingActions_.size(); ++playerId) {
+    const auto& action = pendingActions_[playerId];
+    if (action.type == ActionType::None) {
+      continue;
+    }
+
+    std::string actionSummary;
+    if (action.type == ActionType::Play) {
+      const auto* cardDef = cardCatalog_.findById(action.cardId);
+      if (cardDef) {
+        rules_.resolveCardPlay(*cardDef, static_cast<int>(playerId), action.targetSystemId,
+                               action.targetHasCivilization);
+        actionSummary = "player " + std::to_string(playerId) + " played " + cardDef->title;
+      }
+    } else if (action.type == ActionType::Discard) {
+      actionSummary = "player " + std::to_string(playerId) + " discarded a card";
+    } else if (action.type == ActionType::Pass) {
+      actionSummary = "player " + std::to_string(playerId) + " passed";
+    }
+
+    if (!actionSummary.empty()) {
+      network_.sendRawMessage("REVEAL " + actionSummary);
+      std::cout << "[Reveal] " << actionSummary << "\n";
+    }
+
+    if (playerId == 0) {
+      if (action.handIndex >= 0 &&
+          action.handIndex < static_cast<int>(playerHand_.size())) {
+        discardPile_.push_back(playerHand_[static_cast<size_t>(action.handIndex)]);
+        playerHand_.erase(playerHand_.begin() + action.handIndex);
+        drawCards(1);
+      }
+    }
+  }
+}
+
+void Game::sendActionToHost(const PlayerAction& action) {
+  std::string type = "pass";
+  if (action.type == ActionType::Play) {
+    type = "play";
+  } else if (action.type == ActionType::Discard) {
+    type = "discard";
+  }
+  std::string payload = "ACT " + type + " " + std::to_string(action.cardId) + " " +
+                        std::to_string(action.targetSystemId) + " " +
+                        std::to_string(action.targetHasCivilization ? 1 : 0);
+  network_.sendRawMessage(payload);
+  network_.sendRawMessage("READY");
+}
+
+int Game::ensureRemotePlayerId(const std::string& name) {
+  auto it = remotePlayerIds_.find(name);
+  if (it != remotePlayerIds_.end()) {
+    return it->second;
+  }
+  int nextId = static_cast<int>(remotePlayerIds_.size()) + 1;
+  if (nextId >= static_cast<int>(pendingActions_.size())) {
+    return -1;
+  }
+  remotePlayerIds_[name] = nextId;
+  return nextId;
 }

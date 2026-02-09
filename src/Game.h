@@ -8,6 +8,7 @@
 #include "Network.h"
 #include "Roles.h"
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 struct GameConfig {
@@ -22,6 +23,21 @@ public:
   void run();
 
 private:
+  enum class ActionType {
+    None,
+    Play,
+    Discard,
+    Pass
+  };
+
+  struct PlayerAction {
+    ActionType type = ActionType::None;
+    int cardId = -1;
+    int targetSystemId = -1;
+    bool targetHasCivilization = true;
+    int handIndex = -1;
+  };
+
   void tick();
 
   void runPreparationPhase();
@@ -34,6 +50,10 @@ private:
   bool handlePlayCommand(const std::string& line);
   bool playFromHand(size_t index, int targetSystemId, bool targetHasCivilization);
   bool discardFromHand(size_t index);
+  void collectRemoteActions();
+  void resolvePendingActions();
+  void sendActionToHost(const PlayerAction& action);
+  int ensureRemotePlayerId(const std::string& name);
 
   // Placeholder hooks for multiplayer flow.
   void setupPlayers();
@@ -54,5 +74,8 @@ private:
   std::vector<Card> deck_{};
   std::vector<Card> discardPile_{};
   bool running_ = true;
+  std::vector<PlayerAction> pendingActions_{};
+  std::vector<bool> pendingReady_{};
+  std::unordered_map<std::string, int> remotePlayerIds_{};
   std::optional<AiClient> aiClient_;
 };
