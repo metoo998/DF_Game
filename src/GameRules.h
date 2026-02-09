@@ -21,6 +21,9 @@ struct Projectile {
   std::string cardName;
   int remainingTime = 1;
   int ownerId = -1;
+  int targetSystemId = -1;
+  int level = 0;
+  int cardId = 0;
 };
 
 struct PlayerParams {
@@ -74,7 +77,8 @@ public:
   bool resolveCardPlay(const CardDefinition& card, int playerId, int targetSystemId,
                        bool targetHasCivilization);
 
-  void queueProjectile(const std::string& cardName, int ownerId);
+  void queueProjectile(const std::string& cardName, int ownerId, int targetSystemId, int level,
+                       int cardId);
   void applyTypeIIEffect(const std::string& cardName, int ownerId);
   void applyTypeIIIEffect(const std::string& cardName, int ownerId);
   void applyTimeInterference(int systemId, int ownerId, bool targetHasCivilization);

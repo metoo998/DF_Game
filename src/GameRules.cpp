@@ -53,8 +53,9 @@ bool GameRules::resolveCardPlay(const CardDefinition& card, int playerId, int ta
 
   switch (card.category) {
     case CardCategory::Broadcast:
-    case CardCategory::Strike:
-      queueProjectile(card.title, playerId);
+    case CardCategory::Strike: {
+      int level = card.level;
+      queueProjectile(card.title, playerId, targetSystemId, level, card.id);
       if (card.id == 14) {
         applyTechLockdown(targetSystemId, playerId);
       }
@@ -62,6 +63,7 @@ bool GameRules::resolveCardPlay(const CardDefinition& card, int playerId, int ta
         applyInterstellarExpedition(targetSystemId, playerId);
       }
       break;
+    }
     case CardCategory::Energy:
     case CardCategory::Defense:
     case CardCategory::Building:
@@ -84,9 +86,11 @@ bool GameRules::resolveCardPlay(const CardDefinition& card, int playerId, int ta
   return true;
 }
 
-void GameRules::queueProjectile(const std::string& cardName, int ownerId) {
-  projectiles_.push_back({cardName, 1, ownerId});
-  std::cout << "[Rules] Queued projectile from card: " << cardName << "\n";
+void GameRules::queueProjectile(const std::string& cardName, int ownerId, int targetSystemId,
+                                int level, int cardId) {
+  projectiles_.push_back({cardName, 1, ownerId, targetSystemId, level, cardId});
+  std::cout << "[Rules] Queued projectile from card: " << cardName << " -> system "
+            << targetSystemId << "\n";
 }
 
 void GameRules::applyTypeIIEffect(const std::string& cardName, int ownerId) {
@@ -145,6 +149,37 @@ void GameRules::updateProjectiles() {
 
 void GameRules::resolveTypeI() {
   std::cout << "[Rules] Resolving Type I effects (projectiles).\n";
+  for (auto& projectile : projectiles_) {
+    if (projectile.remainingTime != 0) {
+      continue;
+    }
+    addSystem(projectile.targetSystemId);
+    auto& target = systems_[projectile.targetSystemId];
+    if (projectile.cardId == 14) {
+      applyTechLockdown(projectile.targetSystemId, projectile.ownerId);
+      projectile.remainingTime = -1;
+      continue;
+    }
+    if (projectile.cardId == 18) {
+      applyInterstellarExpedition(projectile.targetSystemId, projectile.ownerId);
+      projectile.remainingTime = -1;
+      continue;
+    }
+    if (projectile.cardId == 15) {
+      target.destroyed = true;
+      target.starExists = false;
+      target.isDimensionalized = true;
+      projectile.remainingTime = -1;
+      continue;
+    }
+    if (projectile.cardId == 12 || projectile.cardId == 13) {
+      target.starExists = false;
+    }
+    if (projectile.level > 0) {
+      target.destroyed = true;
+    }
+    projectile.remainingTime = -1;
+  }
 }
 
 void GameRules::updateTypeIII() {
