@@ -153,33 +153,46 @@ void GameRules::resolveTypeI() {
     if (projectile.remainingTime != 0) {
       continue;
     }
-    addSystem(projectile.targetSystemId);
-    auto& target = systems_[projectile.targetSystemId];
-    if (projectile.cardId == 14) {
-      applyTechLockdown(projectile.targetSystemId, projectile.ownerId);
-      projectile.remainingTime = -1;
-      continue;
-    }
-    if (projectile.cardId == 18) {
-      applyInterstellarExpedition(projectile.targetSystemId, projectile.ownerId);
-      projectile.remainingTime = -1;
-      continue;
-    }
-    if (projectile.cardId == 15) {
-      target.destroyed = true;
-      target.starExists = false;
-      target.isDimensionalized = true;
-      projectile.remainingTime = -1;
-      continue;
-    }
-    if (projectile.cardId == 12 || projectile.cardId == 13) {
-      target.starExists = false;
-    }
-    if (projectile.level > 0) {
-      target.destroyed = true;
+    if (projectile.cardId == 1 || projectile.cardId == 2 || projectile.cardId == 3 ||
+        projectile.cardId == 101 || projectile.cardId == 102 || projectile.cardId == 103) {
+      resolveBroadcastProjectile(projectile);
+    } else {
+      resolveStrikeProjectile(projectile);
     }
     projectile.remainingTime = -1;
   }
+}
+
+void GameRules::resolveStrikeProjectile(const Projectile& projectile) {
+  addSystem(projectile.targetSystemId);
+  auto& target = systems_[projectile.targetSystemId];
+
+  if (projectile.cardId == 14) {
+    applyTechLockdown(projectile.targetSystemId, projectile.ownerId);
+    return;
+  }
+  if (projectile.cardId == 18) {
+    applyInterstellarExpedition(projectile.targetSystemId, projectile.ownerId);
+    return;
+  }
+  if (projectile.cardId == 15) {
+    target.destroyed = true;
+    target.starExists = false;
+    target.isDimensionalized = true;
+    return;
+  }
+  if (projectile.cardId == 12 || projectile.cardId == 13) {
+    target.starExists = false;
+  }
+  if (projectile.level > 0) {
+    target.destroyed = true;
+  }
+}
+
+void GameRules::resolveBroadcastProjectile(const Projectile& projectile) {
+  addSystem(projectile.targetSystemId);
+  std::cout << "[Rules] Broadcast resolved for system " << projectile.targetSystemId
+            << " from player " << projectile.ownerId << ".\n";
 }
 
 void GameRules::updateTypeIII() {

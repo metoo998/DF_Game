@@ -92,6 +92,8 @@ public:
 private:
   void updateProjectiles();
   void resolveTypeI();
+  void resolveStrikeProjectile(const Projectile& projectile);
+  void resolveBroadcastProjectile(const Projectile& projectile);
   void updateTypeIII();
   void updatePlayerParams(int playerId);
   bool spendEnergy(int playerId, int cost);
