@@ -94,6 +94,8 @@ private:
   void resolveTypeI();
   void resolveStrikeProjectile(const Projectile& projectile);
   void resolveBroadcastProjectile(const Projectile& projectile);
+  bool playerHasListeningBase(int playerId) const;
+  std::string broadcastVariant(const Projectile& projectile) const;
   void updateTypeIII();
   void updatePlayerParams(int playerId);
   bool spendEnergy(int playerId, int cost);

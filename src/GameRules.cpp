@@ -1,7 +1,9 @@
 #include "GameRules.h"
 #include "Cards.h"
 
+#include <chrono>
 #include <iostream>
+#include <random>
 
 PhaseReport GameRules::runPreparation(int playerId) {
   updateProjectiles();
@@ -191,10 +193,65 @@ void GameRules::resolveStrikeProjectile(const Projectile& projectile) {
 
 void GameRules::resolveBroadcastProjectile(const Projectile& projectile) {
   addSystem(projectile.targetSystemId);
+  std::vector<int> responders;
+  for (size_t playerId = 0; playerId < players_.size(); ++playerId) {
+    if (static_cast<int>(playerId) == projectile.ownerId) {
+      continue;
+    }
+    if (playerHasListeningBase(static_cast<int>(playerId))) {
+      continue;
+    }
+    responders.push_back(static_cast<int>(playerId));
+  }
+
   std::cout << "[Rules] Broadcast resolved for system " << projectile.targetSystemId
-            << " from player " << projectile.ownerId << ".\n";
+            << " from player " << projectile.ownerId << ". Responders=" << responders.size()
+            << "\n";
+
+  if (responders.empty()) {
+    players_[projectile.ownerId].energy += 1;
+    return;
+  }
+
+  std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::uniform_int_distribution<size_t> pick(0, responders.size() - 1);
+  int responder = responders[pick(rng)];
+
+  std::string broadcasterChoice = broadcastVariant(projectile);
+  std::string responderChoice = "cooperate";
+
+  if (broadcasterChoice == "cooperate" && responderChoice == "cooperate") {
+    players_[projectile.ownerId].energy += 3;
+    players_[responder].energy += 3;
+  } else if (broadcasterChoice == "stealth" && responderChoice == "stealth") {
+    // no energy change
+  } else {
+    if (broadcasterChoice == "stealth") {
+      players_[projectile.ownerId].energy += 5;
+    } else {
+      players_[responder].energy += 5;
+    }
+  }
 }
 
+bool GameRules::playerHasListeningBase(int playerId) const {
+  if (playerId < 0 || playerId >= static_cast<int>(playerBuildings_.size())) {
+    return false;
+  }
+  for (int cardId : playerBuildings_[playerId]) {
+    if (cardId == 16) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string GameRules::broadcastVariant(const Projectile& projectile) const {
+  if (projectile.cardId == 101 || projectile.cardId == 102 || projectile.cardId == 103) {
+    return "stealth";
+  }
+  return "cooperate";
+}
 void GameRules::updateTypeIII() {
   for (size_t playerId = 0; playerId < playerBuildings_.size(); ++playerId) {
     int energyGain = 0;
