@@ -7,6 +7,11 @@
 #include <random>
 
 PhaseReport GameRules::runPreparation(int playerId) {
+  if (pendingTimeInterferenceReset_) {
+    resetPlayersForTimeInterference(timeInterferenceOwnerId_);
+    pendingTimeInterferenceReset_ = false;
+    timeInterferenceOwnerId_ = -1;
+  }
   updateProjectiles();
   resolveTypeI();
   updatePlayerParams(playerId);
@@ -160,6 +165,8 @@ void GameRules::applyTimeInterference(int systemId, int ownerId, bool targetHasC
   target.colonized = false;
   target.ownerId = -1;
   target.occupierId = -1;
+  pendingTimeInterferenceReset_ = true;
+  timeInterferenceOwnerId_ = ownerId;
   std::cout << "[Rules] Time Interference erased civilization in system " << systemId
             << " by player " << ownerId << ".\n";
 }
@@ -490,6 +497,32 @@ std::vector<ObservedSystemState> GameRules::buildObservationSnapshot(
   snapshot.push_back(
       {2, prefix + (systemTwo.isDimensionalized ? "2D collapse" : "Star present"), 1});
   return snapshot;
+}
+
+void GameRules::resetPlayersForTimeInterference(int ownerId) {
+  for (size_t playerId = 0; playerId < players_.size(); ++playerId) {
+    if (static_cast<int>(playerId) == ownerId) {
+      continue;
+    }
+    players_[playerId] = PlayerParams{};
+    players_[playerId].alive = true;
+    players_[playerId].sharesObservationWith = -1;
+  }
+
+  for (auto& systemState : systems_) {
+    systemState.occupied = false;
+    systemState.colonized = false;
+    systemState.occupierId = -1;
+  }
+
+  for (size_t playerId = 0; playerId < playerBuildings_.size(); ++playerId) {
+    if (static_cast<int>(playerId) == ownerId) {
+      continue;
+    }
+    playerBuildings_[playerId].clear();
+  }
+
+  projectiles_.clear();
 }
 
 bool GameRules::isSystemWithinDistance(int startSystemId, int targetSystemId,

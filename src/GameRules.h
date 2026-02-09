@@ -127,10 +127,13 @@ private:
   int computeProductionForPlayer(int playerId) const;
   std::vector<ObservedSystemState> buildObservationSnapshot(int playerId,
                                                             const std::string& prefix) const;
+  void resetPlayersForTimeInterference(int ownerId);
 
   std::vector<Projectile> projectiles_{};
   std::vector<PlayerParams> players_{};
   std::vector<int> playerSystems_{};
   std::vector<SystemState> systems_{};
   std::vector<std::vector<int>> playerBuildings_{};
+  bool pendingTimeInterferenceReset_ = false;
+  int timeInterferenceOwnerId_ = -1;
 };
