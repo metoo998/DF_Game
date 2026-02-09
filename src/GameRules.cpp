@@ -167,6 +167,12 @@ void GameRules::applyTimeInterference(int systemId, int ownerId, bool targetHasC
   target.colonized = false;
   target.ownerId = -1;
   target.occupierId = -1;
+  for (size_t playerId = 0; playerId < playerSystems_.size(); ++playerId) {
+    if (playerSystems_[playerId] == systemId) {
+      players_[playerId].alive = false;
+      players_[playerId].nearDeath = false;
+    }
+  }
   pendingTimeInterferenceReset_ = true;
   timeInterferenceOwnerId_ = ownerId;
   std::cout << "[Rules] Time Interference erased civilization in system " << systemId
@@ -379,6 +385,7 @@ void GameRules::resolveInterstellarExpedition(const Projectile& projectile) {
   if (defenderEnergyAtDecision > attackerInvestment) {
     players_[projectile.ownerId].skipPlayRounds = 1;
     players_[projectile.ownerId].revealedPosition = true;
+    systems_[projectile.targetSystemId].pendingCounterOwnerId = projectile.ownerId;
     std::cout << "[Rules] Expedition failed: attacker " << projectile.ownerId
               << " skipped next play phase and revealed position.\n";
     return;
@@ -679,16 +686,19 @@ void GameRules::resolveSurvival() {
       }
 
       if (survivalConfig_.allowTimeInterferenceRevival && player.timeInterferenceAvailable) {
-        bool hasTarget = false;
-        for (size_t otherId = 0; otherId < players_.size(); ++otherId) {
-          if (&players_[otherId] != &player && players_[otherId].alive) {
-            hasTarget = true;
+        int ownerId = static_cast<int>(&player - &players_.front());
+        int targetSystemId = -1;
+        for (size_t otherId = 0; otherId < playerSystems_.size(); ++otherId) {
+          if (static_cast<int>(otherId) == ownerId) {
+            continue;
+          }
+          if (players_[otherId].alive && playerSystems_[otherId] != -1) {
+            targetSystemId = playerSystems_[otherId];
             break;
           }
         }
-        if (hasTarget) {
-          int ownerId = static_cast<int>(&player - &players_.front());
-          resetPlayersForTimeInterference(ownerId);
+        if (targetSystemId != -1) {
+          applyTimeInterference(targetSystemId, ownerId, true);
           players_[ownerId].alive = true;
           players_[ownerId].nearDeath = false;
           players_[ownerId].timeInterferenceAvailable = false;
@@ -698,6 +708,22 @@ void GameRules::resolveSurvival() {
 
       player.alive = false;
     }
+  }
+
+  for (auto& systemState : systems_) {
+    if (systemState.pendingCounterOwnerId == -1) {
+      continue;
+    }
+    if (systemState.occupierId == -1 || !systemState.occupied) {
+      systemState.pendingCounterOwnerId = -1;
+      continue;
+    }
+    int occupierId = systemState.occupierId;
+    players_[occupierId].alive = false;
+    systemState.occupied = false;
+    systemState.colonized = false;
+    systemState.occupierId = -1;
+    systemState.pendingCounterOwnerId = -1;
   }
 }
 

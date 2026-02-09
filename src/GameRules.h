@@ -52,6 +52,7 @@ struct SystemState {
   bool colonized = false;
   int ownerId = -1;
   int occupierId = -1;
+  int pendingCounterOwnerId = -1;
   std::vector<int> neighbors{};
 };
 
