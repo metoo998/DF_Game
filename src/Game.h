@@ -63,6 +63,7 @@ private:
   int ensureRemotePlayerId(const std::string& name);
   bool validateAndApplyAction(int playerId, const PlayerAction& action);
   void markMissingReadyAsPass();
+  bool cardNeedsTarget(const CardDefinition& card) const;
   void updateWinCondition();
 
   // Placeholder hooks for multiplayer flow.
@@ -81,7 +82,7 @@ private:
   RoleCatalog roleCatalog_;
   std::vector<PlayerState> playerStates_{};
   bool running_ = true;
-  std::vector<PlayerAction> pendingActions_{};
+  std::vector<std::vector<PlayerAction>> pendingActions_{};
   std::vector<bool> pendingReady_{};
   std::vector<bool> pendingAcks_{};
   std::vector<bool> aiControlled_{};
