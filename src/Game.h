@@ -63,6 +63,7 @@ private:
   int ensureRemotePlayerId(const std::string& name);
   bool validateAndApplyAction(int playerId, const PlayerAction& action);
   void markMissingReadyAsPass();
+  void updateWinCondition();
 
   // Placeholder hooks for multiplayer flow.
   void setupPlayers();
@@ -83,6 +84,7 @@ private:
   std::vector<PlayerAction> pendingActions_{};
   std::vector<bool> pendingReady_{};
   std::vector<bool> pendingAcks_{};
+  std::vector<bool> aiControlled_{};
   std::unordered_map<std::string, int> remotePlayerIds_{};
   std::optional<AiClient> aiClient_;
 };

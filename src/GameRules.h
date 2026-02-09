@@ -88,6 +88,7 @@ public:
 
   bool resolveCardPlay(const CardDefinition& card, int playerId, int targetSystemId,
                        bool targetHasCivilization);
+  void resolveSurvival();
 
   void queueProjectile(const std::string& cardName, int ownerId, int targetSystemId, int level,
                        int cardId, int expeditionEnergy);

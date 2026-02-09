@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <numeric>
 #include <random>
 #include <sstream>
 #include <thread>
@@ -12,6 +13,7 @@ Game::Game(const GameConfig& config)
   assets_.load();
 
   playerStates_.assign(static_cast<size_t>(config_.network.maxPlayers), PlayerState{});
+  aiControlled_.assign(static_cast<size_t>(config_.network.maxPlayers), false);
 
   if (config_.useAi) {
     aiClient_.emplace(config_.aiModelPath);
@@ -97,6 +99,7 @@ void Game::runPlayPhase() {
       }
       if (allReady) {
         resolvePendingActions();
+        updateWinCondition();
         for (size_t i = 1; i < pendingAcks_.size(); ++i) {
           pendingAcks_[i] = false;
         }
@@ -196,11 +199,35 @@ void Game::initializePlayerDeck(int playerId) {
   auto& state = playerStates_[playerId];
   state.deck.clear();
   state.discard.clear();
+  std::vector<CardDefinition> pool;
+  const CardDefinition* harmony = nullptr;
   for (const auto& card : cardCatalog_.all()) {
-    state.deck.push_back({card.id, card.title, card.description, card.effectType});
+    if (card.id == 17) {
+      harmony = &card;
+      continue;
+    }
+    pool.push_back(card);
   }
+  if (harmony) {
+    state.deck.push_back({harmony->id, harmony->title, harmony->description, harmony->effectType});
+  }
+
+  std::vector<int> weights;
+  weights.reserve(pool.size());
+  for (const auto& card : pool) {
+    int weight = std::max(1, 10 - card.cost);
+    weights.push_back(weight);
+  }
+
   std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()) +
                    static_cast<unsigned>(playerId));
+  std::discrete_distribution<int> picker(weights.begin(), weights.end());
+  const int targetDeckSize = 60;
+  while (static_cast<int>(state.deck.size()) < targetDeckSize) {
+    int index = picker(rng);
+    const auto& card = pool[static_cast<size_t>(index)];
+    state.deck.push_back({card.id, card.title, card.description, card.effectType});
+  }
   std::shuffle(state.deck.begin(), state.deck.end(), rng);
 }
 
@@ -359,6 +386,7 @@ void Game::collectRemoteActions() {
       int playerId = ensureRemotePlayerId(message.sender);
       if (playerId >= 0 && playerId < static_cast<int>(pendingReady_.size())) {
         pendingReady_[playerId] = true;
+        aiControlled_[playerId] = false;
       }
       continue;
     }
@@ -404,6 +432,7 @@ void Game::resolvePendingActions() {
     }
   }
   network_.sendRawMessage("REVEAL_END");
+  rules_.resolveSurvival();
 }
 
 void Game::sendActionToHost(const PlayerAction& action) {
@@ -488,6 +517,30 @@ void Game::markMissingReadyAsPass() {
     if (!pendingReady_[i]) {
       pendingActions_[i] = PlayerAction{ActionType::Pass, -1, -1, true, -1};
       pendingReady_[i] = true;
+      aiControlled_[i] = true;
     }
+  }
+}
+
+void Game::updateWinCondition() {
+  auto players = rules_.players();
+  int aliveCount = 0;
+  int lastAlive = -1;
+  for (size_t i = 0; i < players.size(); ++i) {
+    if (players[i].alive) {
+      ++aliveCount;
+      lastAlive = static_cast<int>(i);
+    }
+  }
+  if (aliveCount == 1) {
+    std::string summary = "Winner: player " + std::to_string(lastAlive);
+    network_.sendRawMessage("REVEAL " + summary);
+    std::cout << "[Reveal] " << summary << "\n";
+    running_ = false;
+  } else if (aliveCount == 0) {
+    std::string summary = "No winner (all eliminated).";
+    network_.sendRawMessage("REVEAL " + summary);
+    std::cout << "[Reveal] " << summary << "\n";
+    running_ = false;
   }
 }

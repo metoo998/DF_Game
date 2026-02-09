@@ -609,6 +609,30 @@ void GameRules::updatePlayerParams(int playerId) {
   }
 }
 
+void GameRules::resolveSurvival() {
+  for (size_t playerId = 0; playerId < playerSystems_.size(); ++playerId) {
+    int systemId = playerSystems_[playerId];
+    if (systemId >= 0 && systemId < static_cast<int>(systems_.size())) {
+      if (systems_[systemId].destroyed) {
+        players_[playerId].alive = false;
+      }
+    }
+  }
+
+  for (auto& player : players_) {
+    if (!player.alive) {
+      continue;
+    }
+    if (player.nearDeath) {
+      if (player.defenseLevel > 0) {
+        player.nearDeath = false;
+      } else {
+        player.alive = false;
+      }
+    }
+  }
+}
+
 bool GameRules::spendEnergy(int playerId, int cost) {
   addPlayer(playerId);
   if (players_[playerId].energy < cost) {
