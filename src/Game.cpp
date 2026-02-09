@@ -165,6 +165,11 @@ void Game::setupPlayers() {
   std::cout << "[Card Catalog] Loaded cards: " << cardCatalog_.all().size() << "\n";
   std::cout << "[Role Catalog] Loaded roles: " << roleCatalog_.all().size() << "\n";
 
+  SurvivalConfig survivalConfig;
+  survivalConfig.enableRevival = true;
+  survivalConfig.revivalBuildingCardIds = {8, 9, 10};
+  rules_.setSurvivalConfig(survivalConfig);
+
   for (int i = 0; i < config_.network.maxPlayers; ++i) {
     initializePlayerDeck(i);
     drawCards(i, 4);

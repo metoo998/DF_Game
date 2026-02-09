@@ -624,7 +624,24 @@ void GameRules::resolveSurvival() {
       continue;
     }
     if (player.nearDeath) {
-      if (player.defenseLevel > 0) {
+      bool revived = false;
+      if (survivalConfig_.enableRevival && !survivalConfig_.revivalBuildingCardIds.empty()) {
+        auto playerId = static_cast<int>(&player - &players_.front());
+        if (playerId >= 0 && playerId < static_cast<int>(playerBuildings_.size())) {
+          auto& buildings = playerBuildings_[playerId];
+          for (auto it = buildings.begin(); it != buildings.end(); ++it) {
+            if (std::find(survivalConfig_.revivalBuildingCardIds.begin(),
+                          survivalConfig_.revivalBuildingCardIds.end(),
+                          *it) != survivalConfig_.revivalBuildingCardIds.end()) {
+              buildings.erase(it);
+              revived = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (player.defenseLevel > 0 || revived) {
         player.nearDeath = false;
       } else {
         player.alive = false;

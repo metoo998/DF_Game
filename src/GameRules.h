@@ -74,6 +74,11 @@ struct ObservationReport {
   std::vector<WarningReport> warnings;
 };
 
+struct SurvivalConfig {
+  bool enableRevival = true;
+  std::vector<int> revivalBuildingCardIds{};
+};
+
 class GameRules {
 public:
   PhaseReport runPreparation(int playerId);
@@ -81,6 +86,7 @@ public:
   PhaseReport runResolution(int playerId);
 
   ObservationReport generateObservations(int playerId);
+  void setSurvivalConfig(const SurvivalConfig& config) { survivalConfig_ = config; }
 
   void addSystem(int systemId);
   const SystemState& system(int systemId) const;
@@ -135,6 +141,7 @@ private:
   std::vector<int> playerSystems_{};
   std::vector<SystemState> systems_{};
   std::vector<std::vector<int>> playerBuildings_{};
+  SurvivalConfig survivalConfig_{};
   bool pendingTimeInterferenceReset_ = false;
   int timeInterferenceOwnerId_ = -1;
 };
