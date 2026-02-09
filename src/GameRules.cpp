@@ -144,6 +144,9 @@ void GameRules::addPlayer(int playerId) {
   if (playerId >= static_cast<int>(players_.size())) {
     players_.resize(playerId + 1);
   }
+  if (playerId >= static_cast<int>(playerSystems_.size())) {
+    playerSystems_.resize(playerId + 1, -1);
+  }
 }
 
 void GameRules::setBroadcastResponseChoice(int playerId, const std::string& choice) {
@@ -151,6 +154,19 @@ void GameRules::setBroadcastResponseChoice(int playerId, const std::string& choi
   if (choice == "cooperate" || choice == "stealth") {
     players_[playerId].pendingBroadcastChoice = choice;
   }
+}
+
+void GameRules::setPlayerSystem(int playerId, int systemId) {
+  addPlayer(playerId);
+  playerSystems_[playerId] = systemId;
+  addSystem(systemId);
+}
+
+int GameRules::playerSystem(int playerId) const {
+  if (playerId < 0 || playerId >= static_cast<int>(playerSystems_.size())) {
+    return -1;
+  }
+  return playerSystems_[playerId];
 }
 
 void GameRules::updateProjectiles() {
@@ -220,7 +236,10 @@ void GameRules::resolveBroadcastProjectile(const Projectile& projectile) {
     if (playerHasListeningBase(static_cast<int>(playerId))) {
       continue;
     }
-    int responderSystem = static_cast<int>(playerId);
+    int responderSystem = playerSystem(static_cast<int>(playerId));
+    if (responderSystem == -1) {
+      continue;
+    }
     if (broadcastRange >= 0 &&
         !isSystemWithinDistance(projectile.targetSystemId, responderSystem, broadcastRange)) {
       continue;

@@ -94,6 +94,12 @@ void Game::setupPlayers() {
   }
   std::cout << "[Card Catalog] Loaded cards: " << cardCatalog_.all().size() << "\n";
   std::cout << "[Role Catalog] Loaded roles: " << roleCatalog_.all().size() << "\n";
+
+  rules_.setSystemNeighbors(0, {1});
+  rules_.setSystemNeighbors(1, {0, 2});
+  rules_.setSystemNeighbors(2, {1});
+  rules_.setPlayerSystem(0, 0);
+  rules_.setPlayerSystem(1, 2);
 }
 
 void Game::handleNetworkTick() {

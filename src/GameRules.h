@@ -90,6 +90,8 @@ public:
 
   void addPlayer(int playerId);
   void setBroadcastResponseChoice(int playerId, const std::string& choice);
+  void setPlayerSystem(int playerId, int systemId);
+  int playerSystem(int playerId) const;
   const std::vector<Projectile>& projectiles() const { return projectiles_; }
   const std::vector<PlayerParams>& players() const { return players_; }
 
@@ -108,6 +110,7 @@ private:
 
   std::vector<Projectile> projectiles_{};
   std::vector<PlayerParams> players_{};
+  std::vector<int> playerSystems_{};
   std::vector<SystemState> systems_{};
   std::vector<std::vector<int>> playerBuildings_{};
 };
