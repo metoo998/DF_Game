@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+struct CardDefinition;
+
 enum class Phase {
   Preparation,
   Play,
@@ -26,6 +28,7 @@ struct PlayerParams {
   int draw = 0;
   int cooldown = 0;
   bool alive = true;
+  int defenseLevel = 0;
 };
 
 struct SystemState {
@@ -68,6 +71,9 @@ public:
   void addSystem(int systemId);
   const SystemState& system(int systemId) const;
 
+  bool resolveCardPlay(const CardDefinition& card, int playerId, int targetSystemId,
+                       bool targetHasCivilization);
+
   void queueProjectile(const std::string& cardName, int ownerId);
   void applyTypeIIEffect(const std::string& cardName, int ownerId);
   void applyTypeIIIEffect(const std::string& cardName, int ownerId);
@@ -84,8 +90,11 @@ private:
   void resolveTypeI();
   void updateTypeIII();
   void updatePlayerParams(int playerId);
+  bool spendEnergy(int playerId, int cost);
+  void addBuilding(int playerId, int cardId);
 
   std::vector<Projectile> projectiles_{};
   std::vector<PlayerParams> players_{};
   std::vector<SystemState> systems_{};
+  std::vector<std::vector<int>> playerBuildings_{};
 };

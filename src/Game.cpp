@@ -79,9 +79,9 @@ void Game::runResolutionPhase() {
   std::cout << "[Phase] " << report.summary << "\n";
 
   if (!playerHand_.empty()) {
-    rules_.applyTypeIIEffect("Time Interference", 0);
-    rules_.queueProjectile(playerHand_.front().name, 0);
-    rules_.applyTypeIIIEffect("Construction", 0);
+    if (const auto* card = cardCatalog_.findById(playerHand_.front().id)) {
+      rules_.resolveCardPlay(*card, 0, 1, true);
+    }
   }
 }
 

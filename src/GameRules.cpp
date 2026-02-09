@@ -1,4 +1,5 @@
 #include "GameRules.h"
+#include "Cards.h"
 
 #include <iostream>
 
@@ -40,6 +41,47 @@ void GameRules::addSystem(int systemId) {
 
 const SystemState& GameRules::system(int systemId) const {
   return systems_.at(systemId);
+}
+
+bool GameRules::resolveCardPlay(const CardDefinition& card, int playerId, int targetSystemId,
+                                bool targetHasCivilization) {
+  addPlayer(playerId);
+  if (!spendEnergy(playerId, card.cost)) {
+    std::cout << "[Rules] Not enough energy to play " << card.title << ".\n";
+    return false;
+  }
+
+  switch (card.category) {
+    case CardCategory::Broadcast:
+    case CardCategory::Strike:
+      queueProjectile(card.title, playerId);
+      if (card.id == 14) {
+        applyTechLockdown(targetSystemId, playerId);
+      }
+      if (card.id == 18) {
+        applyInterstellarExpedition(targetSystemId, playerId);
+      }
+      break;
+    case CardCategory::Energy:
+    case CardCategory::Defense:
+    case CardCategory::Building:
+    case CardCategory::Special:
+      addBuilding(playerId, card.id);
+      if (card.id == 8) {
+        players_[playerId].defenseLevel = std::max(players_[playerId].defenseLevel, 2);
+      } else if (card.id == 9) {
+        players_[playerId].defenseLevel = std::max(players_[playerId].defenseLevel, 3);
+      }
+      break;
+    case CardCategory::Skill:
+      if (card.id == 19) {
+        applyTimeInterference(targetSystemId, playerId, targetHasCivilization);
+      }
+      break;
+  }
+
+  std::cout << "[Rules] Played card: " << card.title << " by player " << playerId << ".\n";
+  return true;
 }
 
 void GameRules::queueProjectile(const std::string& cardName, int ownerId) {
@@ -106,6 +148,29 @@ void GameRules::resolveTypeI() {
 }
 
 void GameRules::updateTypeIII() {
+  for (size_t playerId = 0; playerId < playerBuildings_.size(); ++playerId) {
+    int energyGain = 0;
+    for (int cardId : playerBuildings_[playerId]) {
+      switch (cardId) {
+        case 4:
+        case 5:
+          energyGain += 1;
+          break;
+        case 6:
+          energyGain += 2;
+          break;
+        case 7:
+          energyGain += 3;
+          break;
+        case 17:
+          energyGain += 7;
+          break;
+        default:
+          break;
+      }
+    }
+    players_[playerId].energy += energyGain;
+  }
   std::cout << "[Rules] Updating Type III effects (buildings/planet states).\n";
 }
 
@@ -117,4 +182,21 @@ void GameRules::updatePlayerParams(int playerId) {
   if (params.cooldown > 0) {
     params.cooldown -= 1;
   }
+}
+
+bool GameRules::spendEnergy(int playerId, int cost) {
+  addPlayer(playerId);
+  if (players_[playerId].energy < cost) {
+    return false;
+  }
+  players_[playerId].energy -= cost;
+  return true;
+}
+
+void GameRules::addBuilding(int playerId, int cardId) {
+  addPlayer(playerId);
+  if (playerId >= static_cast<int>(playerBuildings_.size())) {
+    playerBuildings_.resize(playerId + 1);
+  }
+  playerBuildings_[playerId].push_back(cardId);
 }
