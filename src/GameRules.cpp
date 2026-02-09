@@ -141,6 +141,13 @@ void GameRules::addPlayer(int playerId) {
   }
 }
 
+void GameRules::setBroadcastResponseChoice(int playerId, const std::string& choice) {
+  addPlayer(playerId);
+  if (choice == "cooperate" || choice == "stealth") {
+    players_[playerId].pendingBroadcastChoice = choice;
+  }
+}
+
 void GameRules::updateProjectiles() {
   for (auto& projectile : projectiles_) {
     if (projectile.remainingTime > 0) {
@@ -218,7 +225,9 @@ void GameRules::resolveBroadcastProjectile(const Projectile& projectile) {
   int responder = responders[pick(rng)];
 
   std::string broadcasterChoice = broadcastVariant(projectile);
-  std::string responderChoice = "cooperate";
+  std::string responderChoice = players_[responder].pendingBroadcastChoice.empty()
+                                    ? "cooperate"
+                                    : players_[responder].pendingBroadcastChoice;
 
   if (broadcasterChoice == "cooperate" && responderChoice == "cooperate") {
     players_[projectile.ownerId].energy += 3;
@@ -232,6 +241,8 @@ void GameRules::resolveBroadcastProjectile(const Projectile& projectile) {
       players_[responder].energy += 5;
     }
   }
+
+  players_[responder].pendingBroadcastChoice.clear();
 }
 
 bool GameRules::playerHasListeningBase(int playerId) const {

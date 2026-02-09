@@ -32,6 +32,7 @@ struct PlayerParams {
   int cooldown = 0;
   bool alive = true;
   int defenseLevel = 0;
+  std::string pendingBroadcastChoice = "";
 };
 
 struct SystemState {
@@ -86,6 +87,7 @@ public:
   void applyInterstellarExpedition(int systemId, int ownerId);
 
   void addPlayer(int playerId);
+  void setBroadcastResponseChoice(int playerId, const std::string& choice);
   const std::vector<Projectile>& projectiles() const { return projectiles_; }
   const std::vector<PlayerParams>& players() const { return players_; }
 
