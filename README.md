@@ -57,6 +57,7 @@ and awakens the Time Interference ability.
 - The broadcaster learns the number of responses and randomly selects one responder
   for energy settlement.
 - The listening base can ignore broadcasts and triggers no response effects.
+- Responders are filtered by broadcast range using shortest-path distance.
 
 ## Roles (initial design notes)
 

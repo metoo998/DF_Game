@@ -41,6 +41,7 @@ struct SystemState {
   bool destroyed = false;
   bool occupied = false;
   bool colonized = false;
+  std::vector<int> neighbors{};
 };
 
 struct ObservedSystemState {
@@ -74,6 +75,7 @@ public:
 
   void addSystem(int systemId);
   const SystemState& system(int systemId) const;
+  void setSystemNeighbors(int systemId, const std::vector<int>& neighbors);
 
   bool resolveCardPlay(const CardDefinition& card, int playerId, int targetSystemId,
                        bool targetHasCivilization);
@@ -98,6 +100,7 @@ private:
   void resolveBroadcastProjectile(const Projectile& projectile);
   bool playerHasListeningBase(int playerId) const;
   std::string broadcastVariant(const Projectile& projectile) const;
+  bool isSystemWithinDistance(int startSystemId, int targetSystemId, int distance) const;
   void updateTypeIII();
   void updatePlayerParams(int playerId);
   bool spendEnergy(int playerId, int cost);

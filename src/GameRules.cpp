@@ -45,6 +45,11 @@ const SystemState& GameRules::system(int systemId) const {
   return systems_.at(systemId);
 }
 
+void GameRules::setSystemNeighbors(int systemId, const std::vector<int>& neighbors) {
+  addSystem(systemId);
+  systems_[systemId].neighbors = neighbors;
+}
+
 bool GameRules::resolveCardPlay(const CardDefinition& card, int playerId, int targetSystemId,
                                 bool targetHasCivilization) {
   addPlayer(playerId);
@@ -200,12 +205,24 @@ void GameRules::resolveStrikeProjectile(const Projectile& projectile) {
 
 void GameRules::resolveBroadcastProjectile(const Projectile& projectile) {
   addSystem(projectile.targetSystemId);
+  int broadcastRange = 1;
+  if (projectile.cardId == 2 || projectile.cardId == 102) {
+    broadcastRange = 2;
+  } else if (projectile.cardId == 3 || projectile.cardId == 103) {
+    broadcastRange = -1;
+  }
+
   std::vector<int> responders;
   for (size_t playerId = 0; playerId < players_.size(); ++playerId) {
     if (static_cast<int>(playerId) == projectile.ownerId) {
       continue;
     }
     if (playerHasListeningBase(static_cast<int>(playerId))) {
+      continue;
+    }
+    int responderSystem = static_cast<int>(playerId);
+    if (broadcastRange >= 0 &&
+        !isSystemWithinDistance(projectile.targetSystemId, responderSystem, broadcastRange)) {
       continue;
     }
     responders.push_back(static_cast<int>(playerId));
@@ -262,6 +279,50 @@ std::string GameRules::broadcastVariant(const Projectile& projectile) const {
     return "stealth";
   }
   return "cooperate";
+}
+
+bool GameRules::isSystemWithinDistance(int startSystemId, int targetSystemId,
+                                       int distance) const {
+  if (distance < 0) {
+    return true;
+  }
+  if (startSystemId == targetSystemId) {
+    return true;
+  }
+  if (startSystemId < 0 || targetSystemId < 0 || startSystemId >= static_cast<int>(systems_.size()) ||
+      targetSystemId >= static_cast<int>(systems_.size())) {
+    return false;
+  }
+
+  std::vector<int> frontier{startSystemId};
+  std::vector<int> visited(systems_.size(), -1);
+  visited[startSystemId] = 0;
+
+  while (!frontier.empty()) {
+    std::vector<int> next;
+    for (int node : frontier) {
+      int depth = visited[node];
+      if (depth >= distance) {
+        continue;
+      }
+      for (int neighbor : systems_[node].neighbors) {
+        if (neighbor < 0 || neighbor >= static_cast<int>(systems_.size())) {
+          continue;
+        }
+        if (visited[neighbor] != -1) {
+          continue;
+        }
+        visited[neighbor] = depth + 1;
+        if (neighbor == targetSystemId) {
+          return true;
+        }
+        next.push_back(neighbor);
+      }
+    }
+    frontier.swap(next);
+  }
+
+  return false;
 }
 void GameRules::updateTypeIII() {
   for (size_t playerId = 0; playerId < playerBuildings_.size(); ++playerId) {
