@@ -131,6 +131,7 @@ private:
   std::string broadcastVariant(const Projectile& projectile) const;
   bool isSystemWithinDistance(int startSystemId, int targetSystemId, int distance) const;
   void updateTypeIII();
+  void updateVisibility();
   void updatePlayerParams(int playerId);
   bool spendEnergy(int playerId, int cost);
   void addBuilding(int playerId, int cardId);

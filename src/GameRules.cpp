@@ -14,8 +14,9 @@ PhaseReport GameRules::runPreparation(int playerId) {
   }
   updateProjectiles();
   resolveTypeI();
-  updatePlayerParams(playerId);
+  updateVisibility();
   updateTypeIII();
+  updatePlayerParams(playerId);
   return {Phase::Preparation,
           "Preparation: projectiles advanced, Type I resolved, params/Type III updated."};
 }
@@ -615,6 +616,10 @@ bool GameRules::isSystemWithinDistance(int startSystemId, int targetSystemId,
   }
 
   return false;
+}
+
+void GameRules::updateVisibility() {
+  std::cout << "[Rules] Updating visibility after strike resolution.\n";
 }
 void GameRules::updateTypeIII() {
   std::vector<int> production(players_.size(), 0);
