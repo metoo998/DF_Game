@@ -40,6 +40,8 @@ struct PlayerParams {
   bool revealedPosition = false;
   int skipPlayRounds = 0;
   int sharesObservationWith = -1;
+  bool migrationAvailable = true;
+  bool timeInterferenceAvailable = false;
 };
 
 struct SystemState {
@@ -77,6 +79,8 @@ struct ObservationReport {
 struct SurvivalConfig {
   bool enableRevival = true;
   std::vector<int> revivalBuildingCardIds{};
+  bool allowMigrationRevival = true;
+  bool allowTimeInterferenceRevival = true;
 };
 
 class GameRules {

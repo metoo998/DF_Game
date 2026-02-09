@@ -168,6 +168,8 @@ void Game::setupPlayers() {
   SurvivalConfig survivalConfig;
   survivalConfig.enableRevival = true;
   survivalConfig.revivalBuildingCardIds = {8, 9, 10};
+  survivalConfig.allowMigrationRevival = true;
+  survivalConfig.allowTimeInterferenceRevival = true;
   rules_.setSurvivalConfig(survivalConfig);
 
   for (int i = 0; i < config_.network.maxPlayers; ++i) {

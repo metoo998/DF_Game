@@ -119,6 +119,8 @@ bool GameRules::resolveCardPlay(const CardDefinition& card, int playerId, int ta
         players_[playerId].defenseLevel = std::max(players_[playerId].defenseLevel, 2);
       } else if (card.id == 9) {
         players_[playerId].defenseLevel = std::max(players_[playerId].defenseLevel, 3);
+      } else if (card.id == 17) {
+        players_[playerId].timeInterferenceAvailable = true;
       }
       break;
     case CardCategory::Skill:
@@ -610,10 +612,19 @@ void GameRules::updatePlayerParams(int playerId) {
 }
 
 void GameRules::resolveSurvival() {
+  auto hasColony = [&](int playerId) {
+    for (const auto& systemState : systems_) {
+      if (systemState.colonized && systemState.occupierId == playerId) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   for (size_t playerId = 0; playerId < playerSystems_.size(); ++playerId) {
     int systemId = playerSystems_[playerId];
     if (systemId >= 0 && systemId < static_cast<int>(systems_.size())) {
-      if (systems_[systemId].destroyed) {
+      if (systems_[systemId].destroyed && !hasColony(static_cast<int>(playerId))) {
         players_[playerId].alive = false;
       }
     }
@@ -633,7 +644,9 @@ void GameRules::resolveSurvival() {
             if (std::find(survivalConfig_.revivalBuildingCardIds.begin(),
                           survivalConfig_.revivalBuildingCardIds.end(),
                           *it) != survivalConfig_.revivalBuildingCardIds.end()) {
-              buildings.erase(it);
+              if (*it == 10) {
+                buildings.erase(it);
+              }
               revived = true;
               break;
             }
@@ -643,9 +656,47 @@ void GameRules::resolveSurvival() {
 
       if (player.defenseLevel > 0 || revived) {
         player.nearDeath = false;
-      } else {
-        player.alive = false;
+        continue;
       }
+
+      if (survivalConfig_.allowMigrationRevival && player.migrationAvailable) {
+        int playerId = static_cast<int>(&player - &players_.front());
+        int fallbackSystem = -1;
+        for (size_t systemId = 0; systemId < systems_.size(); ++systemId) {
+          const auto& systemState = systems_[systemId];
+          if (!systemState.destroyed && !systemState.occupied && !systemState.colonized) {
+            fallbackSystem = static_cast<int>(systemId);
+            break;
+          }
+        }
+        if (fallbackSystem != -1) {
+          playerSystems_[playerId] = fallbackSystem;
+          player.energy = 0;
+          player.migrationAvailable = false;
+          player.nearDeath = false;
+          continue;
+        }
+      }
+
+      if (survivalConfig_.allowTimeInterferenceRevival && player.timeInterferenceAvailable) {
+        bool hasTarget = false;
+        for (size_t otherId = 0; otherId < players_.size(); ++otherId) {
+          if (&players_[otherId] != &player && players_[otherId].alive) {
+            hasTarget = true;
+            break;
+          }
+        }
+        if (hasTarget) {
+          int ownerId = static_cast<int>(&player - &players_.front());
+          resetPlayersForTimeInterference(ownerId);
+          players_[ownerId].alive = true;
+          players_[ownerId].nearDeath = false;
+          players_[ownerId].timeInterferenceAvailable = false;
+          continue;
+        }
+      }
+
+      player.alive = false;
     }
   }
 }
